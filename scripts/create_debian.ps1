@@ -8,30 +8,37 @@
     a new WSL distro next to any existing ones, runs the bootstrap (which pulls
     the .env from the protected endpoint) and drops you into a shell.
 
-    The credential prompt can be skipped with -NoEnv. The distro then comes up
-    with an empty .env; rerun the bootstrap inside it once the endpoint exists.
+.PARAMETER BasicAuth
+    Credentials for the .env endpoint in "user:password" form. If omitted, the
+    script asks once; press Enter to skip. Use -NoEnv to skip without asking.
 
 .PARAMETER Name
     Distro name. Defaults to "pizza-sim". If it already exists, a numeric
     suffix is appended (pizza-sim-2, pizza-sim-3, ...).
 
 .PARAMETER NoEnv
-    Skip the .env fetch entirely.
+    Skip the .env fetch entirely. The distro comes up with an empty .env.
 
 .PARAMETER Rootfs
     Use a local rootfs tarball instead of downloading the release asset.
 
 .EXAMPLE
-    create_debian
+    create_debian user:password
 
 .EXAMPLE
     create_debian -NoEnv
 
 .EXAMPLE
-    create_debian -Rootfs C:\build\rootfs.tar -Name pizza-sim-local
+    create_debian user:password -Name pizza-sim-training
+
+.EXAMPLE
+    create_debian -Rootfs C:\build\rootfs.tar -NoEnv
 #>
 [CmdletBinding()]
 param(
+    [Parameter(Position = 0)]
+    [string]$BasicAuth,
+
     [string]$Name = "pizza-sim",
 
     [switch]$NoEnv,
@@ -52,19 +59,18 @@ $ErrorActionPreference = "Stop"
 function Write-Step($msg) { Write-Host ">>> $msg" -ForegroundColor Cyan }
 
 # --- credentials -------------------------------------------------------------
-$basicAuth = ""
-if (-not $NoEnv) {
-    Write-Host "Credentials for the .env endpoint (leave empty to skip)."
-    $user = Read-Host "  user"
-    if ($user) {
-        $sec = Read-Host "  password" -AsSecureString
-        $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
-                    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
-        $basicAuth = "${user}:${plain}"
-    }
-    else {
-        Write-Step "no user given - continuing without .env"
-    }
+if ($NoEnv) {
+    $BasicAuth = ""
+}
+elseif (-not $BasicAuth) {
+    $BasicAuth = Read-Host "Credentials for the .env endpoint (user:password, empty to skip)"
+}
+
+if ($BasicAuth -and $BasicAuth -notmatch '^[^:]+:.+$') {
+    throw "BasicAuth must be in 'user:password' form."
+}
+if (-not $BasicAuth) {
+    Write-Step "no credentials - the distro will come up with an empty .env"
 }
 
 # --- pick a free distro name -------------------------------------------------
@@ -119,15 +125,8 @@ if ($LASTEXITCODE -ne 0) { throw "wsl --import failed with exit code $LASTEXITCO
 
 # --- bootstrap ---------------------------------------------------------------
 Write-Step "bootstrapping"
-$env:DEVBOX_BASICAUTH = $basicAuth
-try {
-    wsl.exe -d $Name -u root -e env DEVBOX_BASICAUTH="$basicAuth" `
-        /usr/local/bin/devbox-bootstrap
-}
-finally {
-    Remove-Item Env:\DEVBOX_BASICAUTH -ErrorAction SilentlyContinue
-    $basicAuth = $null
-}
+wsl.exe -d $Name -u root -e env DEVBOX_BASICAUTH="$BasicAuth" `
+    /usr/local/bin/devbox-bootstrap
 
 # Restart so /etc/wsl.conf (default user, systemd) takes effect
 wsl.exe --terminate $Name | Out-Null
