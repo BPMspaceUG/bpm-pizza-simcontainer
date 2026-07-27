@@ -31,6 +31,10 @@
     Distro name. Defaults to "pizza-sim". If it already exists, a numeric
     suffix is appended (pizza-sim-2, pizza-sim-3, ...).
 
+.PARAMETER SetDefault
+    Make this distro the WSL default, so a bare "wsl" starts it. Handy on a
+    training machine; leave it off to keep an existing distro as the default.
+
 .PARAMETER NoEnv
     Skip the .env entirely. The distro comes up with an empty .env.
 
@@ -38,13 +42,10 @@
     Use a local rootfs tarball instead of downloading the release asset.
 
 .EXAMPLE
-    create_pizzasim_env user:password
+    create_pizzasim_env user:password -SetDefault
 
 .EXAMPLE
-    create_pizzasim_env -EnvUrl https://example.com/path/pizza.env
-
-.EXAMPLE
-    create_pizzasim_env user:password -EnvUrl https://staging.example.com/getenv
+    create_pizzasim_env -EnvUrl https://example.com/path/pizza.env -SetDefault
 
 .EXAMPLE
     create_pizzasim_env -EnvFile C:\sim\pizza.env
@@ -62,6 +63,8 @@ param(
     [string]$EnvFile,
 
     [string]$Name = "pizza-sim",
+
+    [switch]$SetDefault,
 
     [switch]$NoEnv,
 
@@ -191,9 +194,26 @@ else {
 # Restart so /etc/wsl.conf (default user, systemd) takes effect
 wsl.exe --terminate $Name | Out-Null
 
+# --- default distro ----------------------------------------------------------
+if ($SetDefault) {
+    wsl.exe --set-default $Name
+    if ($LASTEXITCODE -eq 0) {
+        Write-Step "'$Name' is now the WSL default - a bare 'wsl' starts it"
+    }
+    else {
+        Write-Warning "could not set '$Name' as default; use: wsl --set-default $Name"
+    }
+}
+
 Write-Host ""
 Write-Host "Distro '$Name' is ready." -ForegroundColor Green
-Write-Host "  enter    : wsl -d $Name"
+if ($SetDefault) {
+    Write-Host "  enter    : wsl"
+}
+else {
+    Write-Host "  enter    : wsl -d $Name"
+    Write-Host "  default  : wsl --set-default $Name"
+}
 Write-Host "  fill .env: wsl -d $Name -u root -- devbox-bootstrap user:password"
 Write-Host "  discard  : wsl --unregister $Name"
 Write-Host ""
