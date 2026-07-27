@@ -8,7 +8,7 @@
 
 FROM debian:trixie-slim
 
-ARG USERNAME=robert
+ARG USERNAME=roberto
 ARG NODE_MAJOR=22
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -69,7 +69,6 @@ RUN useradd -m -s /bin/bash -G sudo ${USERNAME} \
 COPY wsl.conf /etc/wsl.conf
 COPY files/profile.d/devbox.sh /etc/profile.d/devbox.sh
 COPY files/bootstrap.sh /usr/local/bin/devbox-bootstrap
-COPY files/codex-config.toml /etc/skel/.codex/config.toml
 
 RUN chmod 0644 /etc/profile.d/devbox.sh \
     && chmod 0755 /usr/local/bin/devbox-bootstrap
@@ -83,7 +82,6 @@ USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 
 RUN mkdir -p .codex .claude \
-    && cp /etc/skel/.codex/config.toml .codex/config.toml \
     && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-ml.git         bpm-pizza-ml \
     && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git bpm-pizza-vibecoding \
     && chmod +x bpm-pizza-ml/*.sh || true
