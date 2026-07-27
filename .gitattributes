@@ -1,0 +1,8 @@
+# Shell scripts and configs consumed inside Linux must keep LF endings,
+# otherwise the shebang breaks after a Windows checkout.
+*.sh        text eol=lf
+*.toml      text eol=lf
+*.yml       text eol=lf
+Dockerfile  text eol=lf
+wsl.conf    text eol=lf
+*.ps1       text eol=crlf
