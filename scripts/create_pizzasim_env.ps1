@@ -41,6 +41,9 @@
 .PARAMETER Rootfs
     Use a local rootfs tarball instead of downloading the release asset.
 
+.PARAMETER FreshDownload
+    Ignore and delete any cached rootfs before downloading.
+
 .EXAMPLE
     create_pizzasim_env user:password -SetDefault
 
@@ -70,6 +73,8 @@ param(
 
     [string]$Rootfs,
 
+    [switch]$FreshDownload,
+
     [string]$Repo = "BPMspaceUG/bpm-pizza-simcontainer",
 
     [string]$InstallRoot = "$env:LOCALAPPDATA\WSL",
@@ -82,6 +87,16 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Write-Step($msg) { Write-Host ">>> $msg" -ForegroundColor Cyan }
+
+function Get-RemoteSize($url) {
+    try {
+        $r = Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing
+        $len = $r.Headers['Content-Length']
+        if ($len) { return [int64]($len | Select-Object -First 1) }
+    }
+    catch { }
+    return $null
+}
 
 # --- sanity checks -----------------------------------------------------------
 if ($PSVersionTable.PSVersion.Major -lt 5) {
@@ -149,6 +164,10 @@ if ($existing -contains $Name) {
 $target = Join-Path $InstallRoot $Name
 
 # --- obtain rootfs -----------------------------------------------------------
+# The rootfs is well over a gigabyte. Invoke-WebRequest on Windows PowerShell
+# 5.1 truncates files that size often enough to matter, and a truncated tarball
+# fails deep inside the import with a confusing bsdtar error. So: prefer
+# curl.exe (built into Windows 10+, resumable), then verify the size.
 if ($Rootfs) {
     if (-not (Test-Path $Rootfs)) { throw "rootfs not found: $Rootfs" }
     $tarball = $Rootfs
@@ -156,19 +175,62 @@ if ($Rootfs) {
 }
 else {
     $tarball = Join-Path $env:TEMP $Asset
-    if (-not (Test-Path $tarball)) {
-        $url = "https://github.com/$Repo/releases/latest/download/$Asset"
-        Write-Step "downloading $url"
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        try {
-            Invoke-WebRequest -Uri $url -OutFile $tarball -UseBasicParsing
-        }
-        catch {
-            throw "download failed - has the build workflow published a release yet? ($_)"
-        }
+    $url = "https://github.com/$Repo/releases/latest/download/$Asset"
+
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $expected = Get-RemoteSize $url
+
+    if ($FreshDownload -and (Test-Path $tarball)) {
+        Write-Step "discarding cached rootfs"
+        Remove-Item $tarball -Force
+    }
+
+    # A cached file only counts if it is complete.
+    if ((Test-Path $tarball) -and $expected -and
+        ((Get-Item $tarball).Length -ne $expected)) {
+        Write-Step "cached rootfs is incomplete or outdated - discarding"
+        Remove-Item $tarball -Force
+    }
+
+    if (Test-Path $tarball) {
+        Write-Step "using cached $tarball"
     }
     else {
-        Write-Step "using cached $tarball  (delete it to force a re-download)"
+        if ($expected) {
+            Write-Step ("downloading {0:N0} MB from {1}" -f ($expected / 1MB), $url)
+        }
+        else {
+            Write-Step "downloading $url"
+        }
+
+        $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+        if ($curl) {
+            & $curl.Source -L --fail --retry 3 --retry-delay 2 -C - `
+                -o $tarball $url
+            $ok = ($LASTEXITCODE -eq 0)
+        }
+        else {
+            try {
+                Invoke-WebRequest -Uri $url -OutFile $tarball -UseBasicParsing
+                $ok = $true
+            }
+            catch {
+                Write-Warning $_
+                $ok = $false
+            }
+        }
+
+        if (-not $ok) {
+            Remove-Item $tarball -Force -ErrorAction SilentlyContinue
+            throw "download failed. Has the build workflow published a release yet?"
+        }
+
+        $got = (Get-Item $tarball).Length
+        if ($expected -and $got -ne $expected) {
+            Remove-Item $tarball -Force -ErrorAction SilentlyContinue
+            throw ("download incomplete: got {0:N0} of {1:N0} bytes. Rerun the command." -f $got, $expected)
+        }
+        Write-Step ("downloaded {0:N0} MB" -f ($got / 1MB))
     }
 }
 
@@ -176,7 +238,11 @@ else {
 New-Item -ItemType Directory -Force -Path $target | Out-Null
 Write-Step "importing as '$Name' into $target"
 wsl.exe --import $Name $target $tarball
-if ($LASTEXITCODE -ne 0) { throw "wsl --import failed with exit code $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "If the error mentions a truncated archive, the download is corrupt."
+    Write-Warning "Rerun with -FreshDownload to fetch it again."
+    throw "wsl --import failed with exit code $LASTEXITCODE"
+}
 
 # --- bootstrap ---------------------------------------------------------------
 Write-Step "bootstrapping"
