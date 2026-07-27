@@ -13,37 +13,35 @@ agents installed and wired to OpenRouter, and a passwordless `robert` user.
 | Agents | `claude` -> `moonshotai/kimi-k3`, `codex` -> `z-ai/glm-5.2`, both via OpenRouter |
 | Projects | `~/projects/bpm-pizza-ml`, `~/projects/bpm-pizza-vibecoding` |
 
-## Install (Windows)
+## Install
 
-One-time - put the launcher somewhere on your PATH:
-
-```powershell
-mkdir $env:LOCALAPPDATA\bin -Force
-curl.exe -L -o $env:LOCALAPPDATA\bin\create_debian.ps1 `
-  https://github.com/BPMspaceUG/bpm-pizza-simcontainer/releases/latest/download/create_debian.ps1
-[Environment]::SetEnvironmentVariable(
-  "Path", "$env:Path;$env:LOCALAPPDATA\bin", "User")
-```
-
-Then, in a fresh shell:
+One command in **PowerShell on Windows** — nothing to install first, no
+execution policy change needed:
 
 ```powershell
-create_debian user:password
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_debian.ps1))) user:password
 ```
 
-That downloads the rootfs, imports it as a new WSL distro, pulls the `.env` from
-`https://www.aipizzasim.com/getenv` using the credentials you passed, and opens
-a shell.
+Replace `user:password` with the credentials for the `.env` endpoint. Without
+credentials the distro still comes up, just with an empty `.env`:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_debian.ps1))) -NoEnv
+```
+
+The command downloads the rootfs, imports it as a new WSL distro, fetches the
+`.env`, and opens a shell. Prerequisite: WSL itself (`wsl --install`).
+
+### Name the distro
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_debian.ps1))) user:password -Name pizza-sim-training
+```
 
 ## Multiple instances side by side
 
-Existing distros are never touched. A second call auto-suffixes the name:
-
-```powershell
-create_debian user:password                           # -> pizza-sim
-create_debian user:password                           # -> pizza-sim-2
-create_debian user:password -Name pizza-sim-training   # -> explicit name
-```
+Existing distros are never touched. Running the command twice auto-suffixes the
+name: `pizza-sim`, `pizza-sim-2`, `pizza-sim-3`, ...
 
 ```powershell
 wsl --list --verbose        # what exists
@@ -54,9 +52,9 @@ wsl --unregister pizza-sim  # throw away (irreversible)
 Note: all distros share one WSL2 VM - same kernel, same network namespace.
 Port 3000 in one instance blocks port 3000 in the others.
 
-## Re-running the bootstrap
+## Filling in the .env later
 
-If credentials were wrong or the `.env` changed:
+If the endpoint was not reachable, or the credentials changed:
 
 ```powershell
 wsl -d pizza-sim -u root -- devbox-bootstrap user:password
@@ -66,10 +64,11 @@ wsl --terminate pizza-sim
 ## Build locally instead of downloading
 
 ```powershell
+git clone https://github.com/BPMspaceUG/bpm-pizza-simcontainer.git
+cd bpm-pizza-simcontainer
 docker build -t pizza-sim .
 docker export (docker create pizza-sim) -o rootfs.tar
-wsl --import pizza-sim-local $env:LOCALAPPDATA\WSL\pizza-sim-local rootfs.tar
-wsl -d pizza-sim-local -u root -- devbox-bootstrap user:password
+.\scripts\create_debian.ps1 -Rootfs .\rootfs.tar -NoEnv
 ```
 
 ## Layout
@@ -93,3 +92,6 @@ than via `ENV` in the Dockerfile.
 
 The `.env` is fetched at import time, not at build time, so the image itself
 contains no credentials and the same artifact works for every user.
+
+`create_debian.ps1` carries no `#Requires` statement on purpose:
+`[scriptblock]::Create()` rejects those, and the one-liner above depends on it.
