@@ -7,17 +7,21 @@
 # Sources, in order of precedence:
 #   --stdin            read the .env from standard input
 #   --file PATH        copy from a path inside the distro (e.g. /mnt/c/sim/.env)
-#   --url  URL         fetch from an alternate endpoint
+#   --url  URL         fetch from that URL (basic auth optional)
 #   <user:password>    fetch from the default endpoint with basic auth
 #
 # Equivalent environment variables: DEVBOX_ENV_FILE, DEVBOX_ENV_URL,
 # DEVBOX_BASICAUTH.
+#
+# --url works with or without credentials: pass user:password as well if the
+# endpoint is protected, leave it out if it is open.
 #
 # Nothing here is fatal. Without a usable source an empty .env is written and
 # the distro stays usable; rerun this script later to fill it in.
 #
 # Usage:
 #   devbox-bootstrap user:password
+#   devbox-bootstrap --url https://example.com/path/pizza.env
 #   devbox-bootstrap user:password --url https://staging.example.com/getenv
 #   devbox-bootstrap --file /mnt/c/sim/pizza.env
 #   cat pizza.env | devbox-bootstrap --stdin
@@ -37,7 +41,7 @@ ENV_SRC="${DEVBOX_ENV_FILE:-}"
 FROM_STDIN=0
 
 usage() {
-    sed -n '3,25p' "$0" | sed 's/^# \?//'
+    sed -n '3,28p' "$0" | sed 's/^# \?//'
 }
 
 while [ $# -gt 0 ]; do
@@ -50,9 +54,6 @@ while [ $# -gt 0 ]; do
         *)          BASICAUTH="$1"; shift ;;
     esac
 done
-
-# An empty override must not blank out the default
-[ -n "$ENV_URL" ] || ENV_URL="$DEFAULT_ENV_URL"
 
 got_env=0
 
@@ -72,13 +73,24 @@ elif [ -n "$ENV_SRC" ]; then
         echo "!!! could not read ${ENV_SRC}" >&2
     fi
 
-elif [ -n "$BASICAUTH" ]; then
+elif [ -n "$ENV_URL" ] || [ -n "$BASICAUTH" ]; then
+    # An explicit --url works on its own; without one we fall back to the
+    # default endpoint, which does need credentials.
+    [ -n "$ENV_URL" ] || ENV_URL="$DEFAULT_ENV_URL"
+
     echo ">>> fetching .env from ${ENV_URL}"
-    if curl -fsSL --retry 2 --retry-delay 2 \
-            -u "$BASICAUTH" -o "$TMP_FILE" "$ENV_URL"; then
+    if [ -n "$BASICAUTH" ]; then
+        curl -fsSL --retry 2 --retry-delay 2 \
+             -u "$BASICAUTH" -o "$TMP_FILE" "$ENV_URL"
+    else
+        curl -fsSL --retry 2 --retry-delay 2 \
+             -o "$TMP_FILE" "$ENV_URL"
+    fi
+
+    if [ $? -eq 0 ] && [ -s "$TMP_FILE" ]; then
         got_env=1
     else
-        echo "!!! fetch failed (endpoint down, or wrong credentials)" >&2
+        echo "!!! fetch failed (endpoint down, wrong credentials, or empty response)" >&2
     fi
 
 else
