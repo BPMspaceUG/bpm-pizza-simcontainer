@@ -5,7 +5,7 @@
 .DESCRIPTION
     Downloads the prebuilt rootfs from the latest GitHub release, imports it as
     a new WSL distro next to any existing ones, runs the bootstrap (which pulls
-    the .env from the protected endpoint) and drops you into a shell.
+    the .env) and drops you into a shell.
 
     Designed to be run straight from the network without installing anything:
 
@@ -17,44 +17,47 @@
     Credentials for the .env endpoint in "user:password" form. If omitted, the
     script asks once; press Enter to skip. Use -NoEnv to skip without asking.
 
+.PARAMETER EnvUrl
+    Alternate endpoint to fetch the .env from. Defaults to the built-in one
+    (https://www.aipizzasim.com/getenv). Useful for a second simulation, a
+    staging endpoint, or a local web server.
+
+.PARAMETER EnvFile
+    Path to a local .env on the Windows side. Its contents are piped into the
+    distro; no network request is made and -BasicAuth is not needed.
+
 .PARAMETER Name
     Distro name. Defaults to "pizza-sim". If it already exists, a numeric
-    suffix is appended (pizza-sim-2, pizza-sim-3, ...) unless -Reset is given.
-
-.PARAMETER Reset
-    Wipe an existing distro of the same name and rebuild it from a freshly
-    downloaded rootfs. Everything inside the old distro is destroyed - use this
-    between simulation runs so every participant starts from an identical,
-    untouched state. Implies a cache-busting re-download.
+    suffix is appended (pizza-sim-2, pizza-sim-3, ...).
 
 .PARAMETER NoEnv
-    Skip the .env fetch entirely. The distro comes up with an empty .env.
+    Skip the .env entirely. The distro comes up with an empty .env.
 
 .PARAMETER Rootfs
     Use a local rootfs tarball instead of downloading the release asset.
-
-.PARAMETER Yes
-    Skip the confirmation prompt that -Reset would otherwise show.
 
 .EXAMPLE
     create_pizzasim_env user:password
 
 .EXAMPLE
-    create_pizzasim_env user:password -Reset
+    create_pizzasim_env user:password -EnvUrl https://staging.example.com/getenv
 
 .EXAMPLE
-    create_pizzasim_env user:password -Reset -Yes -Name pizza-sim-training
+    create_pizzasim_env -EnvFile C:\sim\pizza.env
+
+.EXAMPLE
+    create_pizzasim_env -NoEnv -Name pizza-sim-test
 #>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
     [string]$BasicAuth,
 
+    [string]$EnvUrl,
+
+    [string]$EnvFile,
+
     [string]$Name = "pizza-sim",
-
-    [switch]$Reset,
-
-    [switch]$Yes,
 
     [switch]$NoEnv,
 
@@ -80,50 +83,53 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
 if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
     throw "wsl.exe not found. Install WSL first:  wsl --install"
 }
+if ($EnvFile -and -not (Test-Path $EnvFile)) {
+    throw "EnvFile not found: $EnvFile"
+}
 
-# --- credentials -------------------------------------------------------------
+# --- where does the .env come from? ------------------------------------------
+$envMode = "none"
 if ($NoEnv) {
     $BasicAuth = ""
 }
-elseif (-not $BasicAuth) {
-    $BasicAuth = Read-Host "Credentials for the .env endpoint (user:password, empty to skip)"
+elseif ($EnvFile) {
+    $envMode = "file"
+    Write-Step "using local .env from $EnvFile"
+}
+else {
+    if (-not $BasicAuth) {
+        $BasicAuth = Read-Host "Credentials for the .env endpoint (user:password, empty to skip)"
+    }
+    if ($BasicAuth) {
+        if ($BasicAuth -notmatch '^[^:]+:.+$') {
+            throw "BasicAuth must be in 'user:password' form."
+        }
+        $envMode = "url"
+    }
 }
 
-if ($BasicAuth -and $BasicAuth -notmatch '^[^:]+:.+$') {
-    throw "BasicAuth must be in 'user:password' form."
+if ($envMode -eq "none") {
+    Write-Step "no .env source - the distro will come up with an empty .env"
 }
-if (-not $BasicAuth) {
-    Write-Step "no credentials - the distro will come up with an empty .env"
+if ($EnvUrl -and $envMode -eq "url") {
+    Write-Step "endpoint overridden: $EnvUrl"
 }
 
-# --- existing distro ---------------------------------------------------------
+# --- pick a free distro name -------------------------------------------------
 $existing = (wsl.exe --list --quiet) -replace "`0", "" |
             ForEach-Object { $_.Trim() } |
             Where-Object { $_ }
 
 if ($existing -contains $Name) {
-    if ($Reset -or $Force) {
-        if ($Reset -and -not $Yes) {
-            Write-Host ""
-            Write-Host "This destroys the distro '$Name' and everything in it," -ForegroundColor Yellow
-            Write-Host "including any work saved inside. This cannot be undone." -ForegroundColor Yellow
-            $answer = Read-Host "Type the distro name to confirm"
-            if ($answer -ne $Name) { throw "aborted - name did not match." }
-        }
+    if ($Force) {
         Write-Step "removing existing distro '$Name'"
-        wsl.exe --terminate $Name 2>$null | Out-Null
-        wsl.exe --unregister $Name
-        if ($LASTEXITCODE -ne 0) { throw "wsl --unregister failed for '$Name'" }
-
-        # the vhdx directory occasionally survives an unregister
-        $stale = Join-Path $InstallRoot $Name
-        if (Test-Path $stale) { Remove-Item $stale -Recurse -Force -ErrorAction SilentlyContinue }
+        wsl.exe --unregister $Name | Out-Null
     }
     else {
         $i = 2
         while ($existing -contains "$Name-$i") { $i++ }
         $Name = "$Name-$i"
-        Write-Step "name taken, using '$Name' instead  (use -Reset to wipe it instead)"
+        Write-Step "name taken, using '$Name' instead"
     }
 }
 
@@ -137,14 +143,6 @@ if ($Rootfs) {
 }
 else {
     $tarball = Join-Path $env:TEMP $Asset
-
-    # a reset must not reuse a stale image, otherwise "raw state" is whatever
-    # was current the last time somebody ran this
-    if ($Reset -and (Test-Path $tarball)) {
-        Write-Step "discarding cached rootfs"
-        Remove-Item $tarball -Force
-    }
-
     if (-not (Test-Path $tarball)) {
         $url = "https://github.com/$Repo/releases/latest/download/$Asset"
         Write-Step "downloading $url"
@@ -169,8 +167,16 @@ if ($LASTEXITCODE -ne 0) { throw "wsl --import failed with exit code $LASTEXITCO
 
 # --- bootstrap ---------------------------------------------------------------
 Write-Step "bootstrapping"
-wsl.exe -d $Name -u root -e env DEVBOX_BASICAUTH="$BasicAuth" `
-    /usr/local/bin/devbox-bootstrap
+if ($envMode -eq "file") {
+    Get-Content -Raw -LiteralPath $EnvFile |
+        wsl.exe -d $Name -u root -e /usr/local/bin/devbox-bootstrap --stdin
+}
+else {
+    wsl.exe -d $Name -u root -e env `
+        DEVBOX_BASICAUTH="$BasicAuth" `
+        DEVBOX_ENV_URL="$EnvUrl" `
+        /usr/local/bin/devbox-bootstrap
+}
 
 # Restart so /etc/wsl.conf (default user, systemd) takes effect
 wsl.exe --terminate $Name | Out-Null
@@ -179,7 +185,6 @@ Write-Host ""
 Write-Host "Distro '$Name' is ready." -ForegroundColor Green
 Write-Host "  enter    : wsl -d $Name"
 Write-Host "  fill .env: wsl -d $Name -u root -- devbox-bootstrap user:password"
-Write-Host "  reset    : rerun this command with -Reset"
 Write-Host "  discard  : wsl --unregister $Name"
 Write-Host ""
 
