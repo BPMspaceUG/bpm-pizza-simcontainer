@@ -76,6 +76,8 @@ RUN chmod 0644 /etc/profile.d/devbox.sh \
 
 # -----------------------------------------------------------------------------
 # Project checkouts
+# Shallow on purpose: the datasets in bpm-pizza-ml make full history
+# expensive, and the rootfs has to stay under the 2 GB release asset limit.
 # -----------------------------------------------------------------------------
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
@@ -83,10 +85,32 @@ WORKDIR /home/${USERNAME}
 RUN mkdir -p projects .codex .claude \
     && cp /etc/skel/.codex/config.toml .codex/config.toml \
     && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-ml.git         projects/bpm-pizza-ml \
-    && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git projects/bpm-pizza-vibecoding
+    && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git projects/bpm-pizza-vibecoding \
+    && chmod +x projects/bpm-pizza-ml/*.sh || true
 
-# Restore full history so the repos are actually usable for development
-RUN git -C projects/bpm-pizza-ml         fetch --unshallow || true \
-    && git -C projects/bpm-pizza-vibecoding fetch --unshallow || true
+# -----------------------------------------------------------------------------
+# Exercise environment: PyTorch venv inside bpm-pizza-ml
+#
+# The exercises expect exactly this:
+#     cd bpm-pizza-ml && source .venv/bin/activate && python3 check_environment.py
+#
+# CPU-only wheels on purpose - the CUDA build is several GB and useless on
+# a training laptop.
+# -----------------------------------------------------------------------------
+WORKDIR /home/${USERNAME}/projects/bpm-pizza-ml
 
+RUN python3 -m venv .venv \
+    && .venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && .venv/bin/pip install --no-cache-dir \
+         --index-url https://download.pytorch.org/whl/cpu \
+         torch torchvision \
+    && .venv/bin/pip install --no-cache-dir tqdm pillow \
+    && find .venv -name '__pycache__' -type d -prune -exec rm -rf {} + \
+    && find .venv -name '*.pyc' -delete
+
+# Fail the build if the exercise environment is not actually usable,
+# so a broken image never reaches the training room.
+RUN .venv/bin/python check_environment.py
+
+WORKDIR /home/${USERNAME}
 USER root
