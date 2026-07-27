@@ -11,7 +11,8 @@
 #   <user:password>    fetch from the default endpoint with basic auth
 #
 # Equivalent environment variables: DEVBOX_ENV_FILE, DEVBOX_ENV_URL,
-# DEVBOX_BASICAUTH.
+# DEVBOX_BASICAUTH. The target account can be overridden with DEVBOX_USER
+# or --user NAME.
 #
 # --url works with or without credentials: pass user:password as well if the
 # endpoint is protected, leave it out if it is open.
@@ -22,27 +23,62 @@
 # Usage:
 #   devbox-bootstrap user:password
 #   devbox-bootstrap --url https://example.com/path/pizza.env
-#   devbox-bootstrap user:password --url https://staging.example.com/getenv
 #   devbox-bootstrap --file /mnt/c/sim/pizza.env
 #   cat pizza.env | devbox-bootstrap --stdin
 # =============================================================================
 set -uo pipefail
 
 DEFAULT_ENV_URL="https://www.aipizzasim.com/getenv"
-
-TARGET_USER="${SUDO_USER:-${USER:-robert}}"
-HOME_DIR="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-ENV_FILE="${HOME_DIR}/.env"
-TMP_FILE="${ENV_FILE}.tmp"
+DEFAULT_USER="robert"
 
 BASICAUTH="${DEVBOX_BASICAUTH:-}"
 ENV_URL="${DEVBOX_ENV_URL:-}"
 ENV_SRC="${DEVBOX_ENV_FILE:-}"
+TARGET_USER="${DEVBOX_USER:-}"
 FROM_STDIN=0
 
 usage() {
     sed -n '3,28p' "$0" | sed 's/^# \?//'
 }
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --stdin)    FROM_STDIN=1; shift ;;
+        --file)     ENV_SRC="${2:-}"; shift 2 ;;
+        --url)      ENV_URL="${2:-}"; shift 2 ;;
+        --user)     TARGET_USER="${2:-}"; shift 2 ;;
+        -h|--help)  usage; exit 0 ;;
+        --)         shift ;;
+        *)          BASICAUTH="$1"; shift ;;
+    esac
+done
+
+# ---------------------------------------------------------------------------
+# Resolve the target account.
+#
+# This must never resolve to root. `wsl -u root -e` leaves SUDO_USER unset and
+# USER set to root, which previously sent the whole configuration to /root.
+# ---------------------------------------------------------------------------
+if [ -z "$TARGET_USER" ]; then
+    if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+        TARGET_USER="$SUDO_USER"
+    elif [ "$(id -u)" -ne 0 ]; then
+        TARGET_USER="$(id -un)"
+    else
+        TARGET_USER="$DEFAULT_USER"
+    fi
+fi
+
+if ! getent passwd "$TARGET_USER" >/dev/null; then
+    echo "!!! no such user: ${TARGET_USER}" >&2
+    exit 2
+fi
+
+HOME_DIR="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+ENV_FILE="${HOME_DIR}/.env"
+TMP_FILE="${ENV_FILE}.tmp"
+
+echo ">>> configuring for user ${TARGET_USER} (${HOME_DIR})"
 
 # A static host answering 200 with an HTML 404 page is the classic silent
 # failure here: curl is happy, the .env is garbage. Reject that.
@@ -54,17 +90,6 @@ looks_like_env() {
     fi
     grep -qE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$f"
 }
-
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --stdin)    FROM_STDIN=1; shift ;;
-        --file)     ENV_SRC="${2:-}"; shift 2 ;;
-        --url)      ENV_URL="${2:-}"; shift 2 ;;
-        -h|--help)  usage; exit 0 ;;
-        --)         shift ;;
-        *)          BASICAUTH="$1"; shift ;;
-    esac
-done
 
 got_env=0
 
@@ -78,7 +103,9 @@ if [ "$FROM_STDIN" = "1" ]; then
 
 elif [ -n "$ENV_SRC" ]; then
     echo ">>> copying .env from ${ENV_SRC}"
-    if cp "$ENV_SRC" "$TMP_FILE" 2>/dev/null && [ -s "$TMP_FILE" ]; then
+    if [ "$ENV_SRC" -ef "$ENV_FILE" ] 2>/dev/null; then
+        cp "$ENV_SRC" "$TMP_FILE" && got_env=1
+    elif cp "$ENV_SRC" "$TMP_FILE" 2>/dev/null && [ -s "$TMP_FILE" ]; then
         got_env=1
     else
         echo "!!! could not read ${ENV_SRC}" >&2
@@ -122,11 +149,11 @@ fi
 
 if [ "$got_env" = "1" ]; then
     mv "$TMP_FILE" "$ENV_FILE"
-    echo ">>> .env in place at ${ENV_FILE} ($(grep -c '=' "$ENV_FILE") entries)"
+    echo ">>> .env written to ${ENV_FILE} ($(grep -c '=' "$ENV_FILE") entries)"
 else
     rm -f "$TMP_FILE"
     [ -f "$ENV_FILE" ] || : > "$ENV_FILE"
-    echo "!!! continuing with an empty .env" >&2
+    echo "!!! continuing with an empty ${ENV_FILE}" >&2
 fi
 
 chown "$TARGET_USER:$TARGET_USER" "$ENV_FILE"
@@ -176,7 +203,5 @@ if [ -n "${OPENROUTER_API_KEY:-}" ]; then
 else
     echo "    NOTE: no OPENROUTER_API_KEY in ${ENV_FILE} - the agents will not authenticate."
     echo "    Retry with:  sudo devbox-bootstrap --url <url>"
-    # Non-zero so the caller can see it went wrong, but only after everything
-    # else has been written - the distro stays usable either way.
     exit 3
 fi
