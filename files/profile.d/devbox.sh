@@ -40,4 +40,5 @@ export ANTHROPIC_SMALL_FAST_MODEL="${CLAUDE_MODEL:-kimi-k3}"
 # The provider block lives in ~/.codex/config.toml and reads LLM_PROXY_KEY,
 # which the block above already exported from ~/.env.
 
-# No cd: the login shell stays in $HOME, where the project repos live.
+# Start in the project directory - this is what the exercise videos show.
+cd "$HOME/projects" 2>/dev/null || true
