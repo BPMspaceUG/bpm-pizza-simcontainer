@@ -32,6 +32,32 @@ credentials the distro still comes up, just with an empty `.env`:
 The command downloads the rootfs, imports it as a new WSL distro, fetches the
 `.env`, and opens a shell. Prerequisite: WSL itself (`wsl --install`).
 
+## Reset to a pristine state
+
+Between simulation runs, wipe the distro and rebuild it from a freshly
+downloaded image so nobody starts from a half-solved exercise:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_pizzasim_env.ps1))) user:password -Reset
+```
+
+`-Reset` asks you to type the distro name before destroying anything. To run it
+unattended, add `-Yes`:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_pizzasim_env.ps1))) user:password -Reset -Yes
+```
+
+What `-Reset` does:
+
+1. terminates and unregisters the distro of that name — everything inside is gone
+2. removes its directory under `%LOCALAPPDATA%\WSL` if it survived
+3. deletes the cached rootfs in `%TEMP%` so the current image is pulled
+4. imports and bootstraps from scratch
+
+Without `-Reset`, an existing name is never touched; the new distro is created
+alongside it as `pizza-sim-2`, `pizza-sim-3`, and so on.
+
 ### Name the distro
 
 ```powershell
@@ -39,9 +65,6 @@ The command downloads the rootfs, imports it as a new WSL distro, fetches the
 ```
 
 ## Multiple instances side by side
-
-Existing distros are never touched. Running the command twice auto-suffixes the
-name: `pizza-sim`, `pizza-sim-2`, `pizza-sim-3`, ...
 
 ```powershell
 wsl --list --verbose        # what exists
