@@ -13,7 +13,6 @@ permissions:
   packages: write
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}
   ASSET: pizza-sim-rootfs.tar.gz
 
 jobs:
@@ -21,6 +20,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # GHCR requires an all-lowercase repository name, but github.repository
+      # keeps the original casing (BPMspaceUG/...). Expressions have no
+      # toLower(), so normalise it here.
+      - name: Resolve image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
 
       - uses: docker/setup-buildx-action@v3
 
@@ -31,28 +41,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
+      # load and push cannot be combined in one buildx call, so build into the
+      # local daemon first - we need the image there anyway for docker export.
+      - name: Build image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
           load: true
-          tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.sha }}
+          tags: ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Push image to GHCR
+        run: |
+          docker tag "$IMAGE:latest" "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:${{ github.sha }}"
+
       - name: Export flat rootfs for WSL
         run: |
-          cid=$(docker create ${{ env.IMAGE }}:latest)
-          docker export "$cid" | gzip -9 > "${{ env.ASSET }}"
+          cid=$(docker create "$IMAGE:latest")
+          docker export "$cid" | gzip -9 > "$ASSET"
           docker rm "$cid"
-          ls -lh "${{ env.ASSET }}"
+          ls -lh "$ASSET"
 
       - name: Fail if asset exceeds the 2 GB release limit
         run: |
-          size=$(stat -c%s "${{ env.ASSET }}")
+          size=$(stat -c%s "$ASSET")
           echo "rootfs size: $((size / 1024 / 1024)) MB"
           if [ "$size" -gt 2000000000 ]; then
             echo "::error::rootfs exceeds the 2 GB GitHub release asset limit"
