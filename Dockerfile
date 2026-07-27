@@ -65,6 +65,8 @@ RUN useradd -m -s /bin/bash -G sudo ${USERNAME} \
 
 # -----------------------------------------------------------------------------
 # System files (WSL config, shell environment, bootstrap helper)
+# ~/.codex/config.toml is not copied here - devbox-bootstrap generates it,
+# because the gateway base URL is only known once the .env is in place.
 # -----------------------------------------------------------------------------
 COPY wsl.conf /etc/wsl.conf
 COPY files/profile.d/devbox.sh /etc/profile.d/devbox.sh
@@ -74,17 +76,18 @@ RUN chmod 0644 /etc/profile.d/devbox.sh \
     && chmod 0755 /usr/local/bin/devbox-bootstrap
 
 # -----------------------------------------------------------------------------
-# Project checkouts - directly in $HOME, so `cd bpm-pizza-ml` works on login.
+# Project checkouts under ~/projects - this is the layout the recorded
+# exercise videos show, so it stays.
 # Shallow on purpose: the datasets make full history expensive, and the rootfs
 # has to stay under the 2 GB release asset limit.
 # -----------------------------------------------------------------------------
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 
-RUN mkdir -p .codex .claude \
-    && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-ml.git         bpm-pizza-ml \
-    && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git bpm-pizza-vibecoding \
-    && chmod +x bpm-pizza-ml/*.sh || true
+RUN mkdir -p projects .codex .claude \
+    && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-ml.git         projects/bpm-pizza-ml \
+    && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git projects/bpm-pizza-vibecoding \
+    && chmod +x projects/bpm-pizza-ml/*.sh || true
 
 # -----------------------------------------------------------------------------
 # Exercise environment: PyTorch venv inside bpm-pizza-ml
@@ -95,7 +98,7 @@ RUN mkdir -p .codex .claude \
 # CPU-only wheels on purpose - the CUDA build is several GB and useless on
 # a training laptop.
 # -----------------------------------------------------------------------------
-WORKDIR /home/${USERNAME}/bpm-pizza-ml
+WORKDIR /home/${USERNAME}/projects/bpm-pizza-ml
 
 RUN python3 -m venv .venv \
     && .venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
