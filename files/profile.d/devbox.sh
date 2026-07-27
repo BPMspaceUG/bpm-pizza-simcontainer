@@ -5,7 +5,7 @@ export LANG=en_US.UTF-8
 export EDITOR=nano
 export PATH="$HOME/.local/bin:$PATH"
 
-# Project secrets fetched by devbox-bootstrap
+# Project secrets, placed by devbox-bootstrap
 if [ -f "$HOME/.env" ]; then
     set -a
     # shellcheck disable=SC1091
@@ -14,7 +14,7 @@ if [ -f "$HOME/.env" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Claude Code -> OpenRouter (Anthropic-compatible endpoint, "Anthropic Skin")
+# Claude Code -> OpenRouter (Anthropic-compatible endpoint)
 # ---------------------------------------------------------------------------
 export ANTHROPIC_BASE_URL="https://openrouter.ai/api"
 export ANTHROPIC_AUTH_TOKEN="${OPENROUTER_API_KEY:-}"
@@ -27,4 +27,4 @@ export ANTHROPIC_SMALL_FAST_MODEL="moonshotai/kimi-k3"
 # ---------------------------------------------------------------------------
 # OPENROUTER_API_KEY comes from ~/.env and is read via env_key in config.toml
 
-cd "$HOME/projects" 2>/dev/null || true
+# No cd: the login shell stays in $HOME, where the project repos live.
