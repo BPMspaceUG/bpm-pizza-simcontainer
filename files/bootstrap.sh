@@ -29,7 +29,7 @@
 set -uo pipefail
 
 DEFAULT_ENV_URL="https://www.aipizzasim.com/getenv"
-DEFAULT_USER="robert"
+DEFAULT_USER="roberto"
 
 BASICAUTH="${DEVBOX_BASICAUTH:-}"
 ENV_URL="${DEVBOX_ENV_URL:-}"
