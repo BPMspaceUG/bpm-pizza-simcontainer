@@ -14,17 +14,18 @@
     No #Requires statement here - it is not allowed inside a scriptblock.
 
 .PARAMETER BasicAuth
-    Credentials for the .env endpoint in "user:password" form. If omitted, the
-    script asks once; press Enter to skip. Use -NoEnv to skip without asking.
+    Credentials for the .env endpoint in "user:password" form. Only needed if
+    the endpoint is protected. If neither this nor -EnvUrl / -EnvFile / -NoEnv
+    is given, the script asks once; press Enter to skip.
 
 .PARAMETER EnvUrl
-    Alternate endpoint to fetch the .env from. Defaults to the built-in one
-    (https://www.aipizzasim.com/getenv). Useful for a second simulation, a
-    staging endpoint, or a local web server.
+    Full URL to fetch the .env from, including the filename if the host serves
+    static files. Replaces the default endpoint
+    (https://www.aipizzasim.com/getenv). Works with or without -BasicAuth.
 
 .PARAMETER EnvFile
-    Path to a local .env on the Windows side. Its contents are piped into the
-    distro; no network request is made and -BasicAuth is not needed.
+    Full path to a local .env on the Windows side, including the filename. Its
+    contents are piped into the distro; no network request is made.
 
 .PARAMETER Name
     Distro name. Defaults to "pizza-sim". If it already exists, a numeric
@@ -38,6 +39,9 @@
 
 .EXAMPLE
     create_pizzasim_env user:password
+
+.EXAMPLE
+    create_pizzasim_env -EnvUrl https://example.com/path/pizza.env
 
 .EXAMPLE
     create_pizzasim_env user:password -EnvUrl https://staging.example.com/getenv
@@ -88,31 +92,37 @@ if ($EnvFile -and -not (Test-Path $EnvFile)) {
 }
 
 # --- where does the .env come from? ------------------------------------------
+# Precedence matches devbox-bootstrap: file, then url, then default endpoint.
 $envMode = "none"
+
 if ($NoEnv) {
     $BasicAuth = ""
+    $EnvUrl = ""
 }
 elseif ($EnvFile) {
     $envMode = "file"
     Write-Step "using local .env from $EnvFile"
+}
+elseif ($EnvUrl) {
+    # An explicit URL is enough on its own - credentials are optional.
+    $envMode = "url"
+    Write-Step "fetching .env from $EnvUrl"
 }
 else {
     if (-not $BasicAuth) {
         $BasicAuth = Read-Host "Credentials for the .env endpoint (user:password, empty to skip)"
     }
     if ($BasicAuth) {
-        if ($BasicAuth -notmatch '^[^:]+:.+$') {
-            throw "BasicAuth must be in 'user:password' form."
-        }
         $envMode = "url"
+        Write-Step "fetching .env from the default endpoint"
     }
 }
 
+if ($BasicAuth -and $BasicAuth -notmatch '^[^:]+:.+$') {
+    throw "BasicAuth must be in 'user:password' form."
+}
 if ($envMode -eq "none") {
     Write-Step "no .env source - the distro will come up with an empty .env"
-}
-if ($EnvUrl -and $envMode -eq "url") {
-    Write-Step "endpoint overridden: $EnvUrl"
 }
 
 # --- pick a free distro name -------------------------------------------------
