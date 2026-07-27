@@ -8,25 +8,35 @@
     a new WSL distro next to any existing ones, runs the bootstrap (which pulls
     the .env from the protected endpoint) and drops you into a shell.
 
-.PARAMETER BasicAuth
-    Credentials for https://www.aipizzasim.com/getenv in "user:password" form.
+    The credential prompt can be skipped with -NoEnv. The distro then comes up
+    with an empty .env; rerun the bootstrap inside it once the endpoint exists.
 
 .PARAMETER Name
     Distro name. Defaults to "pizza-sim". If it already exists, a numeric
     suffix is appended (pizza-sim-2, pizza-sim-3, ...).
 
-.EXAMPLE
-    create_debian myuser:mypassword
+.PARAMETER NoEnv
+    Skip the .env fetch entirely.
+
+.PARAMETER Rootfs
+    Use a local rootfs tarball instead of downloading the release asset.
 
 .EXAMPLE
-    create_debian myuser:mypassword -Name pizza-sim-experiment
+    create_debian
+
+.EXAMPLE
+    create_debian -NoEnv
+
+.EXAMPLE
+    create_debian -Rootfs C:\build\rootfs.tar -Name pizza-sim-local
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true, Position = 0)]
-    [string]$BasicAuth,
-
     [string]$Name = "pizza-sim",
+
+    [switch]$NoEnv,
+
+    [string]$Rootfs,
 
     [string]$Repo = "BPMspaceUG/bpm-pizza-simcontainer",
 
@@ -41,8 +51,20 @@ $ErrorActionPreference = "Stop"
 
 function Write-Step($msg) { Write-Host ">>> $msg" -ForegroundColor Cyan }
 
-if ($BasicAuth -notmatch '^[^:]+:.+$') {
-    throw "BasicAuth must be in 'user:password' form."
+# --- credentials -------------------------------------------------------------
+$basicAuth = ""
+if (-not $NoEnv) {
+    Write-Host "Credentials for the .env endpoint (leave empty to skip)."
+    $user = Read-Host "  user"
+    if ($user) {
+        $sec = Read-Host "  password" -AsSecureString
+        $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
+                    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+        $basicAuth = "${user}:${plain}"
+    }
+    else {
+        Write-Step "no user given - continuing without .env"
+    }
 }
 
 # --- pick a free distro name -------------------------------------------------
@@ -64,17 +86,29 @@ if ($existing -contains $Name) {
 }
 
 $target = Join-Path $InstallRoot $Name
-$tarball = Join-Path $env:TEMP $Asset
 
-# --- download rootfs ---------------------------------------------------------
-if (-not (Test-Path $tarball)) {
-    $url = "https://github.com/$Repo/releases/latest/download/$Asset"
-    Write-Step "downloading $url"
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri $url -OutFile $tarball -UseBasicParsing
+# --- obtain rootfs -----------------------------------------------------------
+if ($Rootfs) {
+    if (-not (Test-Path $Rootfs)) { throw "rootfs not found: $Rootfs" }
+    $tarball = $Rootfs
+    Write-Step "using local rootfs $tarball"
 }
 else {
-    Write-Step "using cached $tarball  (delete it to force a re-download)"
+    $tarball = Join-Path $env:TEMP $Asset
+    if (-not (Test-Path $tarball)) {
+        $url = "https://github.com/$Repo/releases/latest/download/$Asset"
+        Write-Step "downloading $url"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $tarball -UseBasicParsing
+        }
+        catch {
+            throw "download failed - has the build workflow published a release yet? ($_)"
+        }
+    }
+    else {
+        Write-Step "using cached $tarball  (delete it to force a re-download)"
+    }
 }
 
 # --- import ------------------------------------------------------------------
@@ -84,12 +118,15 @@ wsl.exe --import $Name $target $tarball
 if ($LASTEXITCODE -ne 0) { throw "wsl --import failed with exit code $LASTEXITCODE" }
 
 # --- bootstrap ---------------------------------------------------------------
-Write-Step "bootstrapping (fetching .env)"
-wsl.exe -d $Name -u root -- /usr/local/bin/devbox-bootstrap $BasicAuth
-if ($LASTEXITCODE -ne 0) {
-    Write-Warning "bootstrap failed. The distro exists; fix credentials and rerun:"
-    Write-Warning "  wsl -d $Name -u root -- devbox-bootstrap user:password"
-    exit 1
+Write-Step "bootstrapping"
+$env:DEVBOX_BASICAUTH = $basicAuth
+try {
+    wsl.exe -d $Name -u root -e env DEVBOX_BASICAUTH="$basicAuth" `
+        /usr/local/bin/devbox-bootstrap
+}
+finally {
+    Remove-Item Env:\DEVBOX_BASICAUTH -ErrorAction SilentlyContinue
+    $basicAuth = $null
 }
 
 # Restart so /etc/wsl.conf (default user, systemd) takes effect
@@ -98,6 +135,7 @@ wsl.exe --terminate $Name | Out-Null
 Write-Host ""
 Write-Host "Distro '$Name' is ready." -ForegroundColor Green
 Write-Host "  enter    : wsl -d $Name"
+Write-Host "  fill .env: wsl -d $Name -u root -- devbox-bootstrap user:password"
 Write-Host "  discard  : wsl --unregister $Name"
 Write-Host ""
 
