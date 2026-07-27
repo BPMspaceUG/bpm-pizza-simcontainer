@@ -15,6 +15,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # -----------------------------------------------------------------------------
 # Base packages
+# bubblewrap is what Codex uses for sandboxing; without it Codex warns on every
+# start and falls back to its bundled copy.
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -29,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         less \
         nano \
         ripgrep \
+        bubblewrap \
         build-essential \
         python3 \
         python3-venv \
