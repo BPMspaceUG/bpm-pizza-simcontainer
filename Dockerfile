@@ -16,7 +16,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # -----------------------------------------------------------------------------
 # Base packages
 # bubblewrap is what Codex uses for sandboxing; without it Codex warns on every
-# start and falls back to its bundled copy.
+# start. xxd is used by the audio test to check the mp3 header.
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
         git \
         jq \
+        xxd \
         zip \
         unzip \
         gnupg \
@@ -78,6 +79,14 @@ COPY files/update.sh /usr/local/bin/devbox-update
 
 RUN chmod 0644 /etc/profile.d/devbox.sh \
     && chmod 0755 /usr/local/bin/devbox-bootstrap /usr/local/bin/devbox-update
+
+# -----------------------------------------------------------------------------
+# Acceptance tests in ~/tests, next to ~/projects.
+# Run after a reset with:  ~/tests/run-all.sh
+# -----------------------------------------------------------------------------
+COPY --chown=${USERNAME}:${USERNAME} files/tests /home/${USERNAME}/tests
+RUN chmod 0755 /home/${USERNAME}/tests/*.sh \
+    && ln -sf /home/${USERNAME}/tests/run-all.sh /usr/local/bin/devbox-selftest
 
 # -----------------------------------------------------------------------------
 # Project checkouts under ~/projects - this is the layout the recorded
