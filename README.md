@@ -19,14 +19,14 @@ One command in **PowerShell on Windows** — nothing to install first, no
 execution policy change needed:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_debian.ps1))) user:password
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_pizzasim_env.ps1))) user:password
 ```
 
 Replace `user:password` with the credentials for the `.env` endpoint. Without
 credentials the distro still comes up, just with an empty `.env`:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_debian.ps1))) -NoEnv
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_pizzasim_env.ps1))) -NoEnv
 ```
 
 The command downloads the rootfs, imports it as a new WSL distro, fetches the
@@ -35,7 +35,7 @@ The command downloads the rootfs, imports it as a new WSL distro, fetches the
 ### Name the distro
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_debian.ps1))) user:password -Name pizza-sim-training
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_pizzasim_env.ps1))) user:password -Name pizza-sim-training
 ```
 
 ## Multiple instances side by side
@@ -68,19 +68,19 @@ git clone https://github.com/BPMspaceUG/bpm-pizza-simcontainer.git
 cd bpm-pizza-simcontainer
 docker build -t pizza-sim .
 docker export (docker create pizza-sim) -o rootfs.tar
-.\scripts\create_debian.ps1 -Rootfs .\rootfs.tar -NoEnv
+.\scripts\create_pizzasim_env.ps1 -Rootfs .\rootfs.tar -NoEnv
 ```
 
 ## Layout
 
 ```
-Dockerfile                      image definition
-wsl.conf                        default user + systemd, baked into the image
-files/bootstrap.sh              -> /usr/local/bin/devbox-bootstrap
-files/codex-config.toml         -> ~/.codex/config.toml
-files/profile.d/devbox.sh       -> /etc/profile.d/devbox.sh
-scripts/create_debian.ps1       Windows-side installer
-.github/workflows/build.yml     build + export + publish release asset
+Dockerfile                        image definition
+wsl.conf                          default user + systemd, baked into the image
+files/bootstrap.sh                -> /usr/local/bin/devbox-bootstrap
+files/codex-config.toml           -> ~/.codex/config.toml
+files/profile.d/devbox.sh         -> /etc/profile.d/devbox.sh
+scripts/create_pizzasim_env.ps1   Windows-side installer
+.github/workflows/build.yml       build + export + publish release asset
 ```
 
 ## Implementation notes
@@ -93,5 +93,5 @@ than via `ENV` in the Dockerfile.
 The `.env` is fetched at import time, not at build time, so the image itself
 contains no credentials and the same artifact works for every user.
 
-`create_debian.ps1` carries no `#Requires` statement on purpose:
+`create_pizzasim_env.ps1` carries no `#Requires` statement on purpose:
 `[scriptblock]::Create()` rejects those, and the one-liner above depends on it.
