@@ -79,6 +79,10 @@ RUN chmod 0644 /etc/profile.d/devbox.sh \
 # -----------------------------------------------------------------------------
 # Project checkouts under ~/projects - this is the layout the recorded
 # exercise videos show, so it stays.
+#
+# No error suppression here: if a clone fails there is no point in producing
+# an image at all.
+#
 # Shallow on purpose: the datasets make full history expensive, and the rootfs
 # has to stay under the 2 GB release asset limit.
 # -----------------------------------------------------------------------------
@@ -87,8 +91,15 @@ WORKDIR /home/${USERNAME}
 
 RUN mkdir -p projects .codex .claude \
     && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-ml.git         projects/bpm-pizza-ml \
-    && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git projects/bpm-pizza-vibecoding \
-    && chmod +x projects/bpm-pizza-ml/*.sh || true
+    && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git projects/bpm-pizza-vibecoding
+
+# Verify both checkouts really landed before anything else depends on them.
+RUN test -d projects/bpm-pizza-ml/.git \
+    && test -d projects/bpm-pizza-vibecoding/.git \
+    && test -f projects/bpm-pizza-ml/check_environment.py
+
+# Only the chmod may fail harmlessly - a repo without .sh files is fine.
+RUN chmod +x projects/bpm-pizza-ml/*.sh 2>/dev/null || true
 
 # -----------------------------------------------------------------------------
 # Exercise environment: PyTorch venv inside bpm-pizza-ml
