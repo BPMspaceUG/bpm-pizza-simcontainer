@@ -1,0 +1,76 @@
+name: Build WSL rootfs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # weekly rebuild so apt/npm packages and repo checkouts stay fresh
+    - cron: "0 4 * * 1"
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  ASSET: pizza-sim-rootfs.tar.gz
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          load: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Export flat rootfs for WSL
+        run: |
+          cid=$(docker create ${{ env.IMAGE }}:latest)
+          docker export "$cid" | gzip -9 > "${{ env.ASSET }}"
+          docker rm "$cid"
+          ls -lh "${{ env.ASSET }}"
+
+      - name: Fail if asset exceeds the 2 GB release limit
+        run: |
+          size=$(stat -c%s "${{ env.ASSET }}")
+          echo "rootfs size: $((size / 1024 / 1024)) MB"
+          if [ "$size" -gt 2000000000 ]; then
+            echo "::error::rootfs exceeds the 2 GB GitHub release asset limit"
+            exit 1
+          fi
+
+      - name: Publish rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: rootfs-latest
+          name: WSL rootfs (latest)
+          body: |
+            Prebuilt WSL rootfs, commit `${{ github.sha }}`
+
+            Install on Windows:
+
+                create_debian user:password
+          files: |
+            ${{ env.ASSET }}
+            scripts/create_debian.ps1
+          make_latest: true
