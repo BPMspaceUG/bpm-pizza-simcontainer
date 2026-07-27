@@ -10,10 +10,14 @@
 #   LLM_PROXY_KEY   the participant-facing key; the real upstream key stays
 #                   on the gateway and is never handed out
 # Optional overrides:
-#   CLAUDE_MODEL    model alias for Claude Code   (default: kimi-k3)
-#   CODEX_MODEL     model alias for Codex CLI     (default: glm-5.2)
+#   CLAUDE_MODEL    model alias for Claude Code
+#   CODEX_MODEL     model alias for Codex CLI
 #   CODEX_WIRE_API  responses | chat              (default: responses)
 #   CLAUDE_THEME    dark | light | dark-ansi ...  (default: dark)
+#
+# Model aliases must match what the gateway actually serves. List them with:
+#   curl -s -H "Authorization: Bearer $LLM_PROXY_KEY" $LLM_PROXY_URL/models \
+#     | jq -r '.data[].id'
 #
 # Sources for the .env, in order of precedence:
 #   --stdin            read from standard input
@@ -32,6 +36,11 @@ set -uo pipefail
 DEFAULT_ENV_URL="https://www.aipizzasim.com/getenv"
 DEFAULT_USER="roberto"
 
+# Verified against the gateway on 2026-07-27. The bare names kimi-k3 and
+# glm-5.2 do not exist there; every alias carries the openrouter/ prefix.
+DEFAULT_CLAUDE_MODEL="openrouter/moonshotai/kimi-k2.5"
+DEFAULT_CODEX_MODEL="openrouter/z-ai/glm-5.1"
+
 BASICAUTH="${DEVBOX_BASICAUTH:-}"
 ENV_URL="${DEVBOX_ENV_URL:-}"
 ENV_SRC="${DEVBOX_ENV_FILE:-}"
@@ -39,7 +48,7 @@ TARGET_USER="${DEVBOX_USER:-}"
 FROM_STDIN=0
 
 usage() {
-    sed -n '3,32p' "$0" | sed 's/^# \?//'
+    sed -n '3,34p' "$0" | sed 's/^# \?//'
 }
 
 while [ $# -gt 0 ]; do
@@ -172,11 +181,10 @@ fi
 ANTHROPIC_BASE="${PROXY_URL%/}"
 ANTHROPIC_BASE="${ANTHROPIC_BASE%/v1}"
 
-CLAUDE_MODEL_NAME="${CLAUDE_MODEL:-kimi-k3}"
-CODEX_MODEL_NAME="${CODEX_MODEL:-glm-5.2}"
+CLAUDE_MODEL_NAME="${CLAUDE_MODEL:-$DEFAULT_CLAUDE_MODEL}"
+CODEX_MODEL_NAME="${CODEX_MODEL:-$DEFAULT_CODEX_MODEL}"
 # Codex rejects wire_api = "chat" outright since the chat protocol was
-# retired, so "responses" is the only workable default. The gateway must
-# expose /v1/responses accordingly.
+# retired, so "responses" is the only workable default.
 CODEX_WIRE="${CODEX_WIRE_API:-responses}"
 CLAUDE_THEME_NAME="${CLAUDE_THEME:-dark}"
 
