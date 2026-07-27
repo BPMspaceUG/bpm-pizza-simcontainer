@@ -2,50 +2,98 @@
 # =============================================================================
 # devbox-bootstrap
 #
-# Runs after `wsl --import`. Fetches the .env from the protected endpoint and
-# materialises the agent configs from it.
+# Puts a .env in place and materialises the agent configs from it.
 #
-# Missing or unreachable credentials are NOT fatal: the distro stays usable,
-# an empty .env is written, and the agents are configured but unauthenticated.
-# Rerun this script later to fill it in.
+# Sources, in order of precedence:
+#   --stdin            read the .env from standard input
+#   --file PATH        copy from a path inside the distro (e.g. /mnt/c/sim/.env)
+#   --url  URL         fetch from an alternate endpoint
+#   <user:password>    fetch from the default endpoint with basic auth
 #
-# Usage:  devbox-bootstrap <user:password>
-#         devbox-bootstrap            (reads DEVBOX_BASICAUTH, or skips fetch)
+# Equivalent environment variables: DEVBOX_ENV_FILE, DEVBOX_ENV_URL,
+# DEVBOX_BASICAUTH.
+#
+# Nothing here is fatal. Without a usable source an empty .env is written and
+# the distro stays usable; rerun this script later to fill it in.
+#
+# Usage:
+#   devbox-bootstrap user:password
+#   devbox-bootstrap user:password --url https://staging.example.com/getenv
+#   devbox-bootstrap --file /mnt/c/sim/pizza.env
+#   cat pizza.env | devbox-bootstrap --stdin
 # =============================================================================
 set -uo pipefail
 
-ENV_URL="https://www.aipizzasim.com/getenv"
+DEFAULT_ENV_URL="https://www.aipizzasim.com/getenv"
+
 TARGET_USER="${SUDO_USER:-${USER:-robert}}"
 HOME_DIR="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 ENV_FILE="${HOME_DIR}/.env"
+TMP_FILE="${ENV_FILE}.tmp"
 
-BASICAUTH="${1:-${DEVBOX_BASICAUTH:-}}"
+BASICAUTH="${DEVBOX_BASICAUTH:-}"
+ENV_URL="${DEVBOX_ENV_URL:-}"
+ENV_SRC="${DEVBOX_ENV_FILE:-}"
+FROM_STDIN=0
 
-fetch_ok=0
+usage() {
+    sed -n '3,25p' "$0" | sed 's/^# \?//'
+}
 
-if [ -z "$BASICAUTH" ]; then
-    echo ">>> no credentials given - skipping .env fetch"
-else
-    echo ">>> fetching .env from ${ENV_URL}"
-    # credentials go in via stdin so they never appear in the process list
-    if printf '%s' "$BASICAUTH" \
-        | curl -fsSL --retry 2 --retry-delay 2 \
-               --config <(echo 'user = "@-"') \
-               -o "$ENV_FILE.tmp" "$ENV_URL" 2>/dev/null \
-       || curl -fsSL --retry 2 --retry-delay 2 \
-               -u "$BASICAUTH" -o "$ENV_FILE.tmp" "$ENV_URL"
-    then
-        mv "$ENV_FILE.tmp" "$ENV_FILE"
-        fetch_ok=1
-        echo ">>> .env retrieved"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --stdin)    FROM_STDIN=1; shift ;;
+        --file)     ENV_SRC="${2:-}"; shift 2 ;;
+        --url)      ENV_URL="${2:-}"; shift 2 ;;
+        -h|--help)  usage; exit 0 ;;
+        --)         shift ;;
+        *)          BASICAUTH="$1"; shift ;;
+    esac
+done
+
+# An empty override must not blank out the default
+[ -n "$ENV_URL" ] || ENV_URL="$DEFAULT_ENV_URL"
+
+got_env=0
+
+if [ "$FROM_STDIN" = "1" ]; then
+    echo ">>> reading .env from stdin"
+    if cat > "$TMP_FILE" && [ -s "$TMP_FILE" ]; then
+        got_env=1
     else
-        rm -f "$ENV_FILE.tmp"
-        echo "!!! could not fetch .env (endpoint down, or wrong credentials)" >&2
-        echo "!!! continuing with an empty .env" >&2
+        echo "!!! nothing arrived on stdin" >&2
     fi
+
+elif [ -n "$ENV_SRC" ]; then
+    echo ">>> copying .env from ${ENV_SRC}"
+    if cp "$ENV_SRC" "$TMP_FILE" 2>/dev/null && [ -s "$TMP_FILE" ]; then
+        got_env=1
+    else
+        echo "!!! could not read ${ENV_SRC}" >&2
+    fi
+
+elif [ -n "$BASICAUTH" ]; then
+    echo ">>> fetching .env from ${ENV_URL}"
+    if curl -fsSL --retry 2 --retry-delay 2 \
+            -u "$BASICAUTH" -o "$TMP_FILE" "$ENV_URL"; then
+        got_env=1
+    else
+        echo "!!! fetch failed (endpoint down, or wrong credentials)" >&2
+    fi
+
+else
+    echo ">>> no .env source given - skipping"
 fi
 
-[ -f "$ENV_FILE" ] || : > "$ENV_FILE"
+if [ "$got_env" = "1" ]; then
+    mv "$TMP_FILE" "$ENV_FILE"
+    echo ">>> .env in place"
+else
+    rm -f "$TMP_FILE"
+    [ -f "$ENV_FILE" ] || : > "$ENV_FILE"
+    echo "!!! continuing with an empty .env" >&2
+fi
+
 chown "$TARGET_USER:$TARGET_USER" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
@@ -86,7 +134,7 @@ fi
 chown -R "$TARGET_USER:$TARGET_USER" "${HOME_DIR}/.claude" "${HOME_DIR}/.codex"
 
 echo ">>> bootstrap complete"
-if [ "$fetch_ok" = "1" ] && [ -n "${OPENROUTER_API_KEY:-}" ]; then
+if [ -n "${OPENROUTER_API_KEY:-}" ]; then
     echo "    claude -> moonshotai/kimi-k3  via OpenRouter"
     echo "    codex  -> z-ai/glm-5.2        via OpenRouter"
 else
