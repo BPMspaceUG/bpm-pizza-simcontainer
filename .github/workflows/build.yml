@@ -3,10 +3,26 @@ name: Build WSL rootfs
 on:
   push:
     branches: [main]
+    # Only rebuild when something actually changes the rootfs. Docs, the
+    # Windows-side launcher and the workflow itself do not - use the
+    # "Run workflow" button to refresh the release after touching those.
+    paths-ignore:
+      - "**.md"
+      - ".github/**"
+      - ".gitattributes"
+      - ".gitignore"
+      - "scripts/**"
+      - "LICENSE"
   workflow_dispatch:
   schedule:
     # weekly rebuild so apt/npm packages and repo checkouts stay fresh
     - cron: "0 4 * * 1"
+
+# One build per branch. A newer push cancels whatever is still running
+# instead of piling up parallel runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -29,7 +45,7 @@ jobs:
 
       - name: Free up disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
           df -h /
 
       - uses: docker/setup-buildx-action@v4
