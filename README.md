@@ -62,8 +62,8 @@ Four sources, evaluated in this order:
 
 | Option | Behaviour |
 |---|---|
-| `-EnvFile C:\sim\pizza.env` | Local file on Windows, piped in. No network request, no credentials needed. |
-| `-EnvUrl https://... user:password` | Fetch from an alternate endpoint instead of the default |
+| `-EnvFile <path>` | Read a local file on Windows and pipe it in. No network request, no credentials needed. |
+| `-EnvUrl <url>` + `user:password` | Fetch from an alternate endpoint instead of the default |
 | `user:password` | Fetch from the default endpoint (`https://www.aipizzasim.com/getenv`) |
 | `-NoEnv` | Skip entirely — the distro comes up with an empty `.env` |
 
@@ -71,6 +71,16 @@ If no option is given, the script asks once. Pressing Enter skips.
 
 A missing or unreachable source is never fatal: an empty `.env` is written, the
 distro stays usable, and the agents simply have no key yet.
+
+**`-EnvFile` takes the full path including the filename.** Nothing is hardcoded
+and the name does not matter — whatever file you point at is copied into the
+distro as `~/.env`:
+
+```powershell
+-EnvFile C:\sim\pizza.env
+-EnvFile C:\sim\training-may.env
+-EnvFile C:\Users\rob\Downloads\whatever.txt
+```
 
 ### Examples
 
@@ -96,8 +106,9 @@ sudo devbox-bootstrap --file /mnt/c/sim/pizza.env
 cat pizza.env | sudo devbox-bootstrap --stdin
 ```
 
-`--file` accepts any path *inside* the distro, so `/mnt/c/...` reaches the whole
-Windows drive without involving PowerShell at all.
+`--file` also takes the full path including the filename, and accepts any path
+*inside* the distro — so `/mnt/c/...` reaches the whole Windows drive without
+involving PowerShell at all.
 
 Equivalent environment variables for scripted use: `DEVBOX_ENV_FILE`,
 `DEVBOX_ENV_URL`, `DEVBOX_BASICAUTH`.
