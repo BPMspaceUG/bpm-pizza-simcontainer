@@ -44,6 +44,17 @@ usage() {
     sed -n '3,28p' "$0" | sed 's/^# \?//'
 }
 
+# A static host answering 200 with an HTML 404 page is the classic silent
+# failure here: curl is happy, the .env is garbage. Reject that.
+looks_like_env() {
+    local f="$1"
+    [ -s "$f" ] || return 1
+    if head -c 512 "$f" | grep -qiE '<!doctype html|<html|<head|<body'; then
+        return 1
+    fi
+    grep -qE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$f"
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --stdin)    FROM_STDIN=1; shift ;;
@@ -86,20 +97,32 @@ elif [ -n "$ENV_URL" ] || [ -n "$BASICAUTH" ]; then
         curl -fsSL --retry 2 --retry-delay 2 \
              -o "$TMP_FILE" "$ENV_URL"
     fi
+    rc=$?
 
-    if [ $? -eq 0 ] && [ -s "$TMP_FILE" ]; then
-        got_env=1
+    if [ $rc -ne 0 ]; then
+        echo "!!! fetch failed (curl exit $rc) - endpoint down or wrong credentials" >&2
+    elif [ ! -s "$TMP_FILE" ]; then
+        echo "!!! endpoint returned an empty body" >&2
     else
-        echo "!!! fetch failed (endpoint down, wrong credentials, or empty response)" >&2
+        got_env=1
     fi
 
 else
     echo ">>> no .env source given - skipping"
 fi
 
+# Reject anything that clearly is not an env file, whatever the source.
+if [ "$got_env" = "1" ] && ! looks_like_env "$TMP_FILE"; then
+    echo "!!! the response does not look like an .env file:" >&2
+    head -c 200 "$TMP_FILE" | sed 's/^/    /' >&2
+    echo "" >&2
+    echo "!!! check the URL - a static host often answers 404 pages with status 200" >&2
+    got_env=0
+fi
+
 if [ "$got_env" = "1" ]; then
     mv "$TMP_FILE" "$ENV_FILE"
-    echo ">>> .env in place"
+    echo ">>> .env in place at ${ENV_FILE} ($(grep -c '=' "$ENV_FILE") entries)"
 else
     rm -f "$TMP_FILE"
     [ -f "$ENV_FILE" ] || : > "$ENV_FILE"
@@ -149,9 +172,11 @@ echo ">>> bootstrap complete"
 if [ -n "${OPENROUTER_API_KEY:-}" ]; then
     echo "    claude -> moonshotai/kimi-k3  via OpenRouter"
     echo "    codex  -> z-ai/glm-5.2        via OpenRouter"
+    exit 0
 else
-    echo "    NOTE: no OPENROUTER_API_KEY yet - the agents will not authenticate."
-    echo "    Fill it in later with:  sudo devbox-bootstrap user:password"
+    echo "    NOTE: no OPENROUTER_API_KEY in ${ENV_FILE} - the agents will not authenticate."
+    echo "    Retry with:  sudo devbox-bootstrap --url <url>"
+    # Non-zero so the caller can see it went wrong, but only after everything
+    # else has been written - the distro stays usable either way.
+    exit 3
 fi
-
-exit 0
