@@ -1,0 +1,18 @@
+## Codex CLI -> OpenRouter
+## Must live in the USER-level ~/.codex/config.toml; Codex ignores
+## model_provider / model_providers in a project-local .codex/config.toml.
+
+model_provider = "openrouter"
+model = "z-ai/glm-5.2"
+model_reasoning_effort = "high"
+
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+wire_api = "responses"
+
+## Optional: keep stock OpenAI available as a named profile
+# [profiles.openai]
+# model_provider = "openai"
+# model = "gpt-5.3-codex"
