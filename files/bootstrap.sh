@@ -12,7 +12,7 @@
 # Optional overrides:
 #   CLAUDE_MODEL    model alias for Claude Code   (default: kimi-k3)
 #   CODEX_MODEL     model alias for Codex CLI     (default: glm-5.2)
-#   CODEX_WIRE_API  chat | responses              (default: chat)
+#   CODEX_WIRE_API  responses | chat              (default: responses)
 #   CLAUDE_THEME    dark | light | dark-ansi ...  (default: dark)
 #
 # Sources for the .env, in order of precedence:
@@ -174,7 +174,10 @@ ANTHROPIC_BASE="${ANTHROPIC_BASE%/v1}"
 
 CLAUDE_MODEL_NAME="${CLAUDE_MODEL:-kimi-k3}"
 CODEX_MODEL_NAME="${CODEX_MODEL:-glm-5.2}"
-CODEX_WIRE="${CODEX_WIRE_API:-chat}"
+# Codex rejects wire_api = "chat" outright since the chat protocol was
+# retired, so "responses" is the only workable default. The gateway must
+# expose /v1/responses accordingly.
+CODEX_WIRE="${CODEX_WIRE_API:-responses}"
 CLAUDE_THEME_NAME="${CLAUDE_THEME:-dark}"
 
 # ---------------------------------------------------------------------------
