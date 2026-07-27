@@ -13,6 +13,7 @@
 #   CLAUDE_MODEL    model alias for Claude Code   (default: kimi-k3)
 #   CODEX_MODEL     model alias for Codex CLI     (default: glm-5.2)
 #   CODEX_WIRE_API  chat | responses              (default: chat)
+#   CLAUDE_THEME    dark | light | dark-ansi ...  (default: dark)
 #
 # Sources for the .env, in order of precedence:
 #   --stdin            read from standard input
@@ -174,6 +175,7 @@ ANTHROPIC_BASE="${ANTHROPIC_BASE%/v1}"
 CLAUDE_MODEL_NAME="${CLAUDE_MODEL:-kimi-k3}"
 CODEX_MODEL_NAME="${CODEX_MODEL:-glm-5.2}"
 CODEX_WIRE="${CODEX_WIRE_API:-chat}"
+CLAUDE_THEME_NAME="${CLAUDE_THEME:-dark}"
 
 # ---------------------------------------------------------------------------
 # Claude Code -> gateway (Anthropic-compatible /v1/messages)
@@ -187,10 +189,28 @@ cat > "${HOME_DIR}/.claude/settings.json" <<EOF
     "ANTHROPIC_API_KEY": "",
     "ANTHROPIC_MODEL": "${CLAUDE_MODEL_NAME}",
     "ANTHROPIC_SMALL_FAST_MODEL": "${CLAUDE_MODEL_NAME}"
-  },
-  "hasCompletedOnboarding": true
+  }
 }
 EOF
+
+# The first-run wizard (theme picker, tips) is driven by ~/.claude.json, not by
+# settings.json. Pre-seed it so participants land straight in the prompt.
+CLAUDE_JSON="${HOME_DIR}/.claude.json"
+if [ -s "$CLAUDE_JSON" ] && jq -e . "$CLAUDE_JSON" >/dev/null 2>&1; then
+    _tmp="$(mktemp)"
+    jq --arg t "$CLAUDE_THEME_NAME" \
+       '. + {hasCompletedOnboarding: true, theme: $t, hasUsedBackslashReturn: true}' \
+       "$CLAUDE_JSON" > "$_tmp" && mv "$_tmp" "$CLAUDE_JSON"
+    rm -f "$_tmp"
+else
+    cat > "$CLAUDE_JSON" <<EOF
+{
+  "hasCompletedOnboarding": true,
+  "theme": "${CLAUDE_THEME_NAME}",
+  "hasUsedBackslashReturn": true
+}
+EOF
+fi
 
 # ---------------------------------------------------------------------------
 # Codex CLI -> gateway (OpenAI-compatible)
@@ -212,6 +232,7 @@ env_key = "LLM_PROXY_KEY"
 wire_api = "${CODEX_WIRE}"
 EOF
 
+chown "$TARGET_USER:$TARGET_USER" "$CLAUDE_JSON"
 chown -R "$TARGET_USER:$TARGET_USER" "${HOME_DIR}/.claude" "${HOME_DIR}/.codex"
 
 echo ">>> bootstrap complete"
