@@ -2,29 +2,29 @@
 # =============================================================================
 # devbox-bootstrap
 #
-# Puts a .env in place and materialises the agent configs from it.
+# Puts a .env in place and wires both coding agents to whatever gateway it
+# describes.
 #
-# Sources, in order of precedence:
-#   --stdin            read the .env from standard input
-#   --file PATH        copy from a path inside the distro (e.g. /mnt/c/sim/.env)
+# Expected keys (LiteLLM gateway, OpenAI-compatible):
+#   LLM_PROXY_URL   e.g. https://litellm.aipizzasim.com/v1
+#   LLM_PROXY_KEY   the participant-facing key; the real upstream key stays
+#                   on the gateway and is never handed out
+# Optional overrides:
+#   CLAUDE_MODEL    model alias for Claude Code   (default: kimi-k3)
+#   CODEX_MODEL     model alias for Codex CLI     (default: glm-5.2)
+#   CODEX_WIRE_API  chat | responses              (default: chat)
+#
+# Sources for the .env, in order of precedence:
+#   --stdin            read from standard input
+#   --file PATH        copy from a path inside the distro
 #   --url  URL         fetch from that URL (basic auth optional)
 #   <user:password>    fetch from the default endpoint with basic auth
 #
 # Equivalent environment variables: DEVBOX_ENV_FILE, DEVBOX_ENV_URL,
-# DEVBOX_BASICAUTH. The target account can be overridden with DEVBOX_USER
-# or --user NAME.
-#
-# --url works with or without credentials: pass user:password as well if the
-# endpoint is protected, leave it out if it is open.
+# DEVBOX_BASICAUTH. The target account can be set with DEVBOX_USER or --user.
 #
 # Nothing here is fatal. Without a usable source an empty .env is written and
 # the distro stays usable; rerun this script later to fill it in.
-#
-# Usage:
-#   devbox-bootstrap user:password
-#   devbox-bootstrap --url https://example.com/path/pizza.env
-#   devbox-bootstrap --file /mnt/c/sim/pizza.env
-#   cat pizza.env | devbox-bootstrap --stdin
 # =============================================================================
 set -uo pipefail
 
@@ -38,7 +38,7 @@ TARGET_USER="${DEVBOX_USER:-}"
 FROM_STDIN=0
 
 usage() {
-    sed -n '3,28p' "$0" | sed 's/^# \?//'
+    sed -n '3,32p' "$0" | sed 's/^# \?//'
 }
 
 while [ $# -gt 0 ]; do
@@ -54,10 +54,8 @@ while [ $# -gt 0 ]; do
 done
 
 # ---------------------------------------------------------------------------
-# Resolve the target account.
-#
-# This must never resolve to root. `wsl -u root -e` leaves SUDO_USER unset and
-# USER set to root, which previously sent the whole configuration to /root.
+# Resolve the target account. This must never resolve to root: `wsl -u root -e`
+# leaves SUDO_USER unset and USER set to root.
 # ---------------------------------------------------------------------------
 if [ -z "$TARGET_USER" ]; then
     if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
@@ -103,17 +101,13 @@ if [ "$FROM_STDIN" = "1" ]; then
 
 elif [ -n "$ENV_SRC" ]; then
     echo ">>> copying .env from ${ENV_SRC}"
-    if [ "$ENV_SRC" -ef "$ENV_FILE" ] 2>/dev/null; then
-        cp "$ENV_SRC" "$TMP_FILE" && got_env=1
-    elif cp "$ENV_SRC" "$TMP_FILE" 2>/dev/null && [ -s "$TMP_FILE" ]; then
+    if cp "$ENV_SRC" "$TMP_FILE" 2>/dev/null && [ -s "$TMP_FILE" ]; then
         got_env=1
     else
         echo "!!! could not read ${ENV_SRC}" >&2
     fi
 
 elif [ -n "$ENV_URL" ] || [ -n "$BASICAUTH" ]; then
-    # An explicit --url works on its own; without one we fall back to the
-    # default endpoint, which does need credentials.
     [ -n "$ENV_URL" ] || ENV_URL="$DEFAULT_ENV_URL"
 
     echo ">>> fetching .env from ${ENV_URL}"
@@ -138,7 +132,6 @@ else
     echo ">>> no .env source given - skipping"
 fi
 
-# Reject anything that clearly is not an env file, whatever the source.
 if [ "$got_env" = "1" ] && ! looks_like_env "$TMP_FILE"; then
     echo "!!! the response does not look like an .env file:" >&2
     head -c 200 "$TMP_FILE" | sed 's/^/    /' >&2
@@ -160,48 +153,75 @@ chown "$TARGET_USER:$TARGET_USER" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 # ---------------------------------------------------------------------------
-# Read the OpenRouter key out of the .env, if there is one
+# Read the gateway settings out of the .env
 # ---------------------------------------------------------------------------
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE" 2>/dev/null || true
 set +a
 
+# OPENROUTER_* is accepted as a fallback for setups without the gateway.
+PROXY_URL="${LLM_PROXY_URL:-}"
+PROXY_KEY="${LLM_PROXY_KEY:-${OPENROUTER_API_KEY:-}}"
+if [ -z "$PROXY_URL" ] && [ -n "${OPENROUTER_API_KEY:-}" ]; then
+    PROXY_URL="https://openrouter.ai/api/v1"
+fi
+
+# Claude Code appends /v1/messages itself, so it needs the base without /v1.
+ANTHROPIC_BASE="${PROXY_URL%/}"
+ANTHROPIC_BASE="${ANTHROPIC_BASE%/v1}"
+
+CLAUDE_MODEL_NAME="${CLAUDE_MODEL:-kimi-k3}"
+CODEX_MODEL_NAME="${CODEX_MODEL:-glm-5.2}"
+CODEX_WIRE="${CODEX_WIRE_API:-chat}"
+
 # ---------------------------------------------------------------------------
-# Claude Code -> OpenRouter, backed by Kimi K3
+# Claude Code -> gateway (Anthropic-compatible /v1/messages)
 # ---------------------------------------------------------------------------
 mkdir -p "${HOME_DIR}/.claude"
 cat > "${HOME_DIR}/.claude/settings.json" <<EOF
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
-    "ANTHROPIC_AUTH_TOKEN": "${OPENROUTER_API_KEY:-}",
+    "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE}",
+    "ANTHROPIC_AUTH_TOKEN": "${PROXY_KEY}",
     "ANTHROPIC_API_KEY": "",
-    "ANTHROPIC_MODEL": "moonshotai/kimi-k3",
-    "ANTHROPIC_SMALL_FAST_MODEL": "moonshotai/kimi-k3"
+    "ANTHROPIC_MODEL": "${CLAUDE_MODEL_NAME}",
+    "ANTHROPIC_SMALL_FAST_MODEL": "${CLAUDE_MODEL_NAME}"
   },
   "hasCompletedOnboarding": true
 }
 EOF
 
 # ---------------------------------------------------------------------------
-# Codex CLI -> OpenRouter, backed by GLM 5.2
-# config.toml ships in the image and reads OPENROUTER_API_KEY from the env
+# Codex CLI -> gateway (OpenAI-compatible)
+# Written here rather than baked into the image, because the base URL only
+# becomes known once the .env is in place.
 # ---------------------------------------------------------------------------
 mkdir -p "${HOME_DIR}/.codex"
-if [ ! -f "${HOME_DIR}/.codex/config.toml" ]; then
-    cp /etc/skel/.codex/config.toml "${HOME_DIR}/.codex/config.toml"
-fi
+cat > "${HOME_DIR}/.codex/config.toml" <<EOF
+## Generated by devbox-bootstrap - edit ~/.env and rerun to change this.
+
+model_provider = "gateway"
+model = "${CODEX_MODEL_NAME}"
+model_reasoning_effort = "high"
+
+[model_providers.gateway]
+name = "LLM gateway"
+base_url = "${PROXY_URL}"
+env_key = "LLM_PROXY_KEY"
+wire_api = "${CODEX_WIRE}"
+EOF
 
 chown -R "$TARGET_USER:$TARGET_USER" "${HOME_DIR}/.claude" "${HOME_DIR}/.codex"
 
 echo ">>> bootstrap complete"
-if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-    echo "    claude -> moonshotai/kimi-k3  via OpenRouter"
-    echo "    codex  -> z-ai/glm-5.2        via OpenRouter"
+if [ -n "$PROXY_KEY" ] && [ -n "$PROXY_URL" ]; then
+    echo "    gateway : ${PROXY_URL}"
+    echo "    claude  -> ${CLAUDE_MODEL_NAME}"
+    echo "    codex   -> ${CODEX_MODEL_NAME} (${CODEX_WIRE})"
     exit 0
 else
-    echo "    NOTE: no OPENROUTER_API_KEY in ${ENV_FILE} - the agents will not authenticate."
-    echo "    Retry with:  sudo devbox-bootstrap --url <url>"
+    echo "    NOTE: LLM_PROXY_URL / LLM_PROXY_KEY missing in ${ENV_FILE}."
+    echo "    The agents will not authenticate. Retry with a valid .env."
     exit 3
 fi
