@@ -1,4 +1,3 @@
-#Requires -Version 5.1
 <#
 .SYNOPSIS
     Creates a ready-to-use BPM Pizza Sim WSL distro in one command.
@@ -7,6 +6,12 @@
     Downloads the prebuilt rootfs from the latest GitHub release, imports it as
     a new WSL distro next to any existing ones, runs the bootstrap (which pulls
     the .env from the protected endpoint) and drops you into a shell.
+
+    Designed to be run straight from the network without installing anything:
+
+        & ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_debian.ps1))) user:password
+
+    No #Requires statement here - it is not allowed inside a scriptblock.
 
 .PARAMETER BasicAuth
     Credentials for the .env endpoint in "user:password" form. If omitted, the
@@ -30,9 +35,6 @@
 
 .EXAMPLE
     create_debian user:password -Name pizza-sim-training
-
-.EXAMPLE
-    create_debian -Rootfs C:\build\rootfs.tar -NoEnv
 #>
 [CmdletBinding()]
 param(
@@ -57,6 +59,14 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Write-Step($msg) { Write-Host ">>> $msg" -ForegroundColor Cyan }
+
+# --- sanity checks -----------------------------------------------------------
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    throw "PowerShell 5.1 or newer is required."
+}
+if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
+    throw "wsl.exe not found. Install WSL first:  wsl --install"
+}
 
 # --- credentials -------------------------------------------------------------
 if ($NoEnv) {
