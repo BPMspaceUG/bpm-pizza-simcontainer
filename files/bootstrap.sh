@@ -11,9 +11,9 @@
 #     sudo simbox-configure
 #
 # Expected keys (LiteLLM gateway, OpenAI-compatible):
-#   LLM_PROXY_URL   e.g. https://litellm.aipizzasim.com/v1
-#   LLM_PROXY_KEY   the participant-facing key; the real upstream key stays
-#                   on the gateway and is never handed out
+#   LITELLM_PIZZA_URL   e.g. https://litellm.aipizzasim.com/v1
+#   LITELLM_PIZZA_KEY   the participant-facing key; the real upstream key
+#                       stays on the gateway and is never handed out
 # Optional:
 #   ENV_SELF_URL    the URL this very file is served from. Set it and the
 #                   machines follow the file if it ever moves.
@@ -24,8 +24,8 @@
 #   CLAUDE_THEME    dark | light | dark-ansi ...  (default: dark)
 #
 # Model aliases must match what the gateway actually serves. List them with:
-#   curl -s -H "Authorization: Bearer $LLM_PROXY_KEY" $LLM_PROXY_URL/models \
-#     | jq -r '.data[].id'
+#   curl -s -H "Authorization: Bearer $LITELLM_PIZZA_KEY" \
+#     $LITELLM_PIZZA_URL/models | jq -r '.data[].id'
 #
 # Sources, in order of precedence:
 #   --stdin            read from standard input
@@ -223,8 +223,8 @@ SELF_URL="${ENV_SELF_URL:-${ENV_FILE:-}}"
 remember_source "$SELF_URL"
 
 # OPENROUTER_* is accepted as a fallback for setups without the gateway.
-PROXY_URL="${LLM_PROXY_URL:-}"
-PROXY_KEY="${LLM_PROXY_KEY:-${OPENROUTER_API_KEY:-}}"
+PROXY_URL="${LITELLM_PIZZA_URL:-}"
+PROXY_KEY="${LITELLM_PIZZA_KEY:-${OPENROUTER_API_KEY:-}}"
 if [ -z "$PROXY_URL" ] && [ -n "${OPENROUTER_API_KEY:-}" ]; then
     PROXY_URL="https://openrouter.ai/api/v1"
 fi
@@ -289,9 +289,9 @@ model = "${CODEX_MODEL_NAME}"
 model_reasoning_effort = "high"
 
 [model_providers.gateway]
-name = "LLM gateway"
+name = "LiteLLM gateway"
 base_url = "${PROXY_URL}"
-env_key = "LLM_PROXY_KEY"
+env_key = "LITELLM_PIZZA_KEY"
 wire_api = "${CODEX_WIRE}"
 EOF
 
@@ -306,7 +306,7 @@ if [ -n "$PROXY_KEY" ] && [ -n "$PROXY_URL" ]; then
     [ -n "$SELF_URL" ] && echo "    source  : ${SELF_URL}"
     exit 0
 else
-    echo "    NOTE: LLM_PROXY_URL / LLM_PROXY_KEY missing in ${ENV_PATH}."
+    echo "    NOTE: LITELLM_PIZZA_URL / LITELLM_PIZZA_KEY missing in ${ENV_PATH}."
     echo "    The agents will not authenticate. Retry with a valid .env."
     exit 3
 fi
