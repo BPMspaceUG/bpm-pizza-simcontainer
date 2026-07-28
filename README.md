@@ -34,16 +34,16 @@ Prebuilt WSL rootfs, commit `abc1234`
 Compare that against the latest commit on `main`. If they differ, either the
 last build failed or a commit touched only files under `paths-ignore`.
 
-**The Docker image** — an intermediate product, not needed for WSL:
+**The Docker image** — an intermediate product, not needed for WSL. It is
+published to `ghcr.io/bpmspaceug/bpm-pizza-simcontainer:latest` and listed
+under the organisation's **Packages** tab. Note that the organisation policy
+currently forbids public packages, so it cannot be pulled anonymously. To run
+the image in Docker or Compose without that, build it from the released rootfs:
 
-| | |
-|---|---|
-| Package page | <https://github.com/orgs/BPMspaceUG/packages/container/package/bpm-pizza-simcontainer> |
-| Pull | `ghcr.io/bpmspaceug/bpm-pizza-simcontainer:latest` |
-
-Tagged `latest` and with the commit SHA. Org packages are private by default,
-which GitHub reports as a 404 rather than a 403 — make the package public in
-its settings if you want to pull it without authenticating.
+```bash
+curl -L -o rootfs.tar.gz https://github.com/BPMspaceUG/bpm-pizza-simcontainer/releases/latest/download/pizza-sim-rootfs.tar.gz
+docker import rootfs.tar.gz pizza-sim:latest
+```
 
 On the Windows side the downloaded tarball is cached in
 `%TEMP%\pizza-sim-rootfs.tar.gz` and the imported distro lives in
@@ -124,8 +124,8 @@ It lands in `~/.env`, not in `~/projects`.
 
 | Key | Required | Meaning |
 |---|---|---|
-| `LLM_PROXY_URL` | yes | Gateway base, e.g. `https://litellm.aipizzasim.com/v1` |
-| `LLM_PROXY_KEY` | yes | Participant-facing key. The real upstream key stays on the gateway. |
+| `LITELLM_PIZZA_URL` | yes | Gateway base, e.g. `https://litellm.aipizzasim.com/v1` |
+| `LITELLM_PIZZA_KEY` | yes | Participant-facing key. The real upstream key stays on the gateway. |
 | `ENV_SELF_URL` | recommended | The URL this file is served from — see below |
 | `CLAUDE_MODEL` | recommended | Model alias for Claude Code |
 | `CODEX_MODEL` | recommended | Model alias for Codex CLI |
@@ -187,7 +187,7 @@ match what the gateway actually serves — **every alias there carries an
 List the real ones:
 
 ```bash
-curl -s -H "Authorization: Bearer $LLM_PROXY_KEY" $LLM_PROXY_URL/models \
+curl -s -H "Authorization: Bearer $LITELLM_PIZZA_KEY" $LITELLM_PIZZA_URL/models \
   | jq -r '.data[].id'
 ```
 
@@ -199,9 +199,9 @@ CODEX_MODEL=openrouter/z-ai/glm-5.1
 ```
 
 Claude Code talks to the gateway's Anthropic-compatible `/v1/messages`; the
-trailing `/v1` of `LLM_PROXY_URL` is stripped because Claude Code appends the
-path itself. `ANTHROPIC_API_KEY` is deliberately set to an empty string — a
-leftover value there overrides the auth token.
+trailing `/v1` of `LITELLM_PIZZA_URL` is stripped because Claude Code appends
+the path itself. `ANTHROPIC_API_KEY` is deliberately set to an empty string —
+a leftover value there overrides the auth token.
 
 Codex uses `/v1/responses`. `wire_api = "chat"` is not an option: Codex refuses
 to load a config containing it since the chat protocol was retired.
@@ -303,7 +303,7 @@ wsl --unregister pizza-sim  # delete, irreversible
 | Symptom | Cause | Fix |
 |---|---|---|
 | `400 no healthy deployments for this model` | alias does not exist on the gateway | list the real aliases, correct the `.env`, `sudo simbox-configure` |
-| `Missing environment variable: LLM_PROXY_KEY` | `.env` empty or not fetched | `sudo simbox-configure`, then `exec bash -l` |
+| `Missing environment variable: LITELLM_PIZZA_KEY` | `.env` empty or not fetched | `sudo simbox-configure`, then `exec bash -l` |
 | `wire_api = "chat" is no longer supported` | image predates the fix | re-import with `-FreshDownload` |
 | `ANTHROPIC_MODEL=` on the command line is ignored | `settings.json` overrides the shell | `claude --model <alias>` |
 | `Truncated tar archive` during import | incomplete download | rerun with `-FreshDownload` |
@@ -311,7 +311,7 @@ wsl --unregister pizza-sim  # delete, irreversible
 | Codex: `Model metadata not found` | no metadata for gateway aliases | expected and harmless |
 | Codex refuses to run outside a repo | it requires a git repository | `cd` into one, or pass `--skip-git-repo-check` |
 | `.env` seems missing | it lives in `~/.env`, not `~/projects` | `cat ~/.env` |
-| 404 on the GHCR package page | org packages are private by default | make it public in the package settings |
+| 404 on the GHCR package page | org policy forbids public packages | import the released rootfs instead, see above |
 
 ---
 
