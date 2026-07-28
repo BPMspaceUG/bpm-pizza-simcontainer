@@ -245,16 +245,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # --- bootstrap ---------------------------------------------------------------
-# The command was renamed from devbox-bootstrap to simbox-configure. Resolve it
-# inside the distro so this script keeps working with older rootfs releases.
+# Resolve the command inside the distro, so a rootfs that does not provide it
+# reports that clearly instead of surfacing a raw env(1) error.
 Write-Step "bootstrapping"
 
-$resolve = 'command -v simbox-configure || command -v devbox-bootstrap'
-$bootstrapCmd = (wsl.exe -d $Name -u root -e sh -c $resolve | Select-Object -First 1)
+$bootstrapCmd = (wsl.exe -d $Name -u root -e sh -c 'command -v simbox-configure' |
+                 Select-Object -First 1)
 if ($bootstrapCmd) { $bootstrapCmd = $bootstrapCmd.Trim() }
 
 if (-not $bootstrapCmd) {
-    Write-Warning "no bootstrap command found in the image - is the rootfs current?"
+    Write-Warning "simbox-configure not found in the image - is the rootfs current?"
     Write-Warning "The distro exists but has no .env."
 }
 elseif ($envMode -eq "file") {
@@ -263,8 +263,8 @@ elseif ($envMode -eq "file") {
 }
 else {
     wsl.exe -d $Name -u root -e env `
-        DEVBOX_BASICAUTH="$BasicAuth" `
-        DEVBOX_ENV_URL="$EnvUrl" `
+        SIMBOX_BASICAUTH="$BasicAuth" `
+        SIMBOX_ENV_URL="$EnvUrl" `
         $bootstrapCmd
 }
 
