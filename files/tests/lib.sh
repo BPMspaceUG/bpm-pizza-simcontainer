@@ -37,9 +37,9 @@ load_env() {
 
 require_gateway() {
     load_env
-    [ -n "${LLM_PROXY_URL:-}" ] || fail "LLM_PROXY_URL is not set" \
+    [ -n "${LITELLM_PIZZA_URL:-}" ] || fail "LITELLM_PIZZA_URL is not set" \
         "Run: sudo simbox-configure"
-    [ -n "${LLM_PROXY_KEY:-}" ] || fail "LLM_PROXY_KEY is not set" \
+    [ -n "${LITELLM_PIZZA_KEY:-}" ] || fail "LITELLM_PIZZA_KEY is not set" \
         "Run: sudo simbox-configure"
 }
 
@@ -57,5 +57,5 @@ check_answer() {
 list_models_hint() {
     printf '%s\n' \
       "List the aliases the gateway really serves with:" \
-      "  curl -s -H \"Authorization: Bearer \$LLM_PROXY_KEY\" \$LLM_PROXY_URL/models | jq -r '.data[].id'"
+      "  curl -s -H \"Authorization: Bearer \$LITELLM_PIZZA_KEY\" \$LITELLM_PIZZA_URL/models | jq -r '.data[].id'"
 }
