@@ -5,11 +5,18 @@
 # Puts a .env in place and wires both coding agents to whatever gateway it
 # describes.
 #
+# Called without arguments it refreshes the .env from wherever it came from
+# last, so updating a changed file on the CDN is just:
+#
+#     sudo devbox-bootstrap
+#
 # Expected keys (LiteLLM gateway, OpenAI-compatible):
 #   LLM_PROXY_URL   e.g. https://litellm.aipizzasim.com/v1
 #   LLM_PROXY_KEY   the participant-facing key; the real upstream key stays
 #                   on the gateway and is never handed out
-# Optional overrides:
+# Optional:
+#   ENV_SELF_URL    where this very file lives. Set it and the machines will
+#                   follow the file if it ever moves to a different URL.
 #   CLAUDE_MODEL    model alias for Claude Code
 #   CODEX_MODEL     model alias for Codex CLI
 #   CODEX_WIRE_API  responses | chat              (default: responses)
@@ -19,11 +26,13 @@
 #   curl -s -H "Authorization: Bearer $LLM_PROXY_KEY" $LLM_PROXY_URL/models \
 #     | jq -r '.data[].id'
 #
-# Sources for the .env, in order of precedence:
+# Sources, in order of precedence:
 #   --stdin            read from standard input
 #   --file PATH        copy from a path inside the distro
 #   --url  URL         fetch from that URL (basic auth optional)
 #   <user:password>    fetch from the default endpoint with basic auth
+#   (nothing)          ENV_SELF_URL from the current .env, else the URL
+#                      remembered from the last successful run
 #
 # Equivalent environment variables: DEVBOX_ENV_FILE, DEVBOX_ENV_URL,
 # DEVBOX_BASICAUTH. The target account can be set with DEVBOX_USER or --user.
@@ -35,6 +44,8 @@ set -uo pipefail
 
 DEFAULT_ENV_URL="https://www.aipizzasim.com/getenv"
 DEFAULT_USER="roberto"
+STATE_DIR="/etc/devbox"
+STATE_FILE="${STATE_DIR}/env-source"
 
 # Verified against the gateway on 2026-07-27. The bare names kimi-k3 and
 # glm-5.2 do not exist there; every alias carries the openrouter/ prefix.
@@ -46,20 +57,21 @@ ENV_URL="${DEVBOX_ENV_URL:-}"
 ENV_SRC="${DEVBOX_ENV_FILE:-}"
 TARGET_USER="${DEVBOX_USER:-}"
 FROM_STDIN=0
+EXPLICIT_SOURCE=0
 
 usage() {
-    sed -n '3,34p' "$0" | sed 's/^# \?//'
+    sed -n '3,41p' "$0" | sed 's/^# \?//'
 }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --stdin)    FROM_STDIN=1; shift ;;
-        --file)     ENV_SRC="${2:-}"; shift 2 ;;
-        --url)      ENV_URL="${2:-}"; shift 2 ;;
+        --stdin)    FROM_STDIN=1; EXPLICIT_SOURCE=1; shift ;;
+        --file)     ENV_SRC="${2:-}"; EXPLICIT_SOURCE=1; shift 2 ;;
+        --url)      ENV_URL="${2:-}"; EXPLICIT_SOURCE=1; shift 2 ;;
         --user)     TARGET_USER="${2:-}"; shift 2 ;;
         -h|--help)  usage; exit 0 ;;
         --)         shift ;;
-        *)          BASICAUTH="$1"; shift ;;
+        *)          BASICAUTH="$1"; EXPLICIT_SOURCE=1; shift ;;
     esac
 done
 
@@ -88,6 +100,26 @@ TMP_FILE="${ENV_FILE}.tmp"
 
 echo ">>> configuring for user ${TARGET_USER} (${HOME_DIR})"
 
+# ---------------------------------------------------------------------------
+# No source given: fall back to where the .env came from before.
+# ENV_SELF_URL inside the file wins, so moving the file to a new URL only has
+# to be announced once, in the old file.
+# ---------------------------------------------------------------------------
+if [ "$EXPLICIT_SOURCE" = "0" ]; then
+    remembered=""
+    if [ -s "$ENV_FILE" ]; then
+        remembered=$(grep -m1 '^[[:space:]]*ENV_SELF_URL=' "$ENV_FILE" 2>/dev/null \
+                     | cut -d= -f2- | tr -d '"'"'"' \r')
+    fi
+    if [ -z "$remembered" ] && [ -r "$STATE_FILE" ]; then
+        remembered=$(head -n1 "$STATE_FILE" 2>/dev/null | tr -d ' \r')
+    fi
+    if [ -n "$remembered" ]; then
+        ENV_URL="$remembered"
+        echo ">>> no source given - refreshing from the remembered URL"
+    fi
+fi
+
 # A static host answering 200 with an HTML 404 page is the classic silent
 # failure here: curl is happy, the .env is garbage. Reject that.
 looks_like_env() {
@@ -100,6 +132,7 @@ looks_like_env() {
 }
 
 got_env=0
+used_url=""
 
 if [ "$FROM_STDIN" = "1" ]; then
     echo ">>> reading .env from stdin"
@@ -131,15 +164,17 @@ elif [ -n "$ENV_URL" ] || [ -n "$BASICAUTH" ]; then
     rc=$?
 
     if [ $rc -ne 0 ]; then
-        echo "!!! fetch failed (curl exit $rc) - endpoint down or wrong credentials" >&2
+        echo "!!! fetch failed (curl exit $rc) - endpoint down or wrong URL" >&2
     elif [ ! -s "$TMP_FILE" ]; then
         echo "!!! endpoint returned an empty body" >&2
     else
         got_env=1
+        used_url="$ENV_URL"
     fi
 
 else
-    echo ">>> no .env source given - skipping"
+    echo ">>> no .env source given and none remembered - skipping"
+    echo "    Provide one once with:  sudo devbox-bootstrap --url <url>"
 fi
 
 if [ "$got_env" = "1" ] && ! looks_like_env "$TMP_FILE"; then
@@ -153,6 +188,12 @@ fi
 if [ "$got_env" = "1" ]; then
     mv "$TMP_FILE" "$ENV_FILE"
     echo ">>> .env written to ${ENV_FILE} ($(grep -c '=' "$ENV_FILE") entries)"
+    # Remember the URL so a later bare run can refresh without arguments.
+    if [ -n "$used_url" ] && [ "$(id -u)" -eq 0 ]; then
+        mkdir -p "$STATE_DIR" 2>/dev/null \
+            && printf '%s\n' "$used_url" > "$STATE_FILE" 2>/dev/null \
+            && chmod 0644 "$STATE_FILE" 2>/dev/null
+    fi
 else
     rm -f "$TMP_FILE"
     [ -f "$ENV_FILE" ] || : > "$ENV_FILE"
@@ -187,6 +228,13 @@ CODEX_MODEL_NAME="${CODEX_MODEL:-$DEFAULT_CODEX_MODEL}"
 # retired, so "responses" is the only workable default.
 CODEX_WIRE="${CODEX_WIRE_API:-responses}"
 CLAUDE_THEME_NAME="${CLAUDE_THEME:-dark}"
+
+# If the file names its own location, that becomes the new remembered source.
+if [ -n "${ENV_SELF_URL:-}" ] && [ "$(id -u)" -eq 0 ]; then
+    mkdir -p "$STATE_DIR" 2>/dev/null \
+        && printf '%s\n' "$ENV_SELF_URL" > "$STATE_FILE" 2>/dev/null \
+        && chmod 0644 "$STATE_FILE" 2>/dev/null
+fi
 
 # ---------------------------------------------------------------------------
 # Claude Code -> gateway (Anthropic-compatible /v1/messages)
