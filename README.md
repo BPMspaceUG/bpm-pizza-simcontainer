@@ -10,6 +10,46 @@ Nothing needs to be installed on the Windows side except WSL itself.
 
 ---
 
+## Where the image lives
+
+Two artifacts, both hosted by GitHub.
+
+**The WSL rootfs** — this is what the installer downloads:
+
+| | |
+|---|---|
+| Release page | <https://github.com/BPMspaceUG/bpm-pizza-simcontainer/releases/tag/rootfs-latest> |
+| Direct link | <https://github.com/BPMspaceUG/bpm-pizza-simcontainer/releases/latest/download/pizza-sim-rootfs.tar.gz> |
+| Filename | `pizza-sim-rootfs.tar.gz` |
+| Size | roughly 900 MB compressed |
+
+The release is a rolling one: every successful build replaces the asset under
+the same tag `rootfs-latest`. Its description always names the commit it was
+built from, which is how you tell whether the published image is current:
+
+```
+Prebuilt WSL rootfs, commit `abc1234`
+```
+
+Compare that against the latest commit on `main`. If they differ, either the
+last build failed or a commit touched only files under `paths-ignore`.
+
+**The Docker image** — an intermediate product, not needed for WSL:
+
+| | |
+|---|---|
+| Package page | <https://github.com/BPMspaceUG/bpm-pizza-simcontainer/pkgs/container/bpm-pizza-simcontainer> |
+| Pull | `ghcr.io/bpmspaceug/bpm-pizza-simcontainer:latest` |
+
+Tagged `latest` and with the commit SHA. Useful for inspecting the image
+without importing it, or for converting it to a rootfs yourself.
+
+On the Windows side the downloaded tarball is cached in
+`%TEMP%\pizza-sim-rootfs.tar.gz` and the imported distro lives in
+`%LOCALAPPDATA%\WSL\<name>`.
+
+---
+
 ## Contents of the image
 
 | | |
@@ -275,7 +315,8 @@ wsl --unregister pizza-sim  # delete, irreversible
 ## Building
 
 CI in `.github/workflows/build.yml` builds the image, pushes it to GHCR,
-converts it to a WSL rootfs and publishes it as the `rootfs-latest` release.
+converts it to a WSL rootfs and publishes it as the `rootfs-latest` release
+described at the top of this file.
 
 **One build at a time.** A `concurrency` group with `cancel-in-progress: true`
 cancels the running build when a newer push arrives.
@@ -284,8 +325,15 @@ cancels the running build when a newer push arrives.
 `.github/**` and dotfiles — none of which change the rootfs. Use
 **Actions → Build WSL rootfs → Run workflow** to rebuild anyway.
 
+The build fails rather than publishing a broken image: a failed clone, a
+missing checkout, a `check_environment.py` that does not pass, or a rootfs
+above the 2 GB release asset limit all stop it.
+
 The install one-liner reads the script from `raw.githubusercontent.com/.../main/`,
 not from the release asset, so script changes are live immediately.
+
+A weekly cron rebuild keeps apt packages, npm globals and the repo checkouts
+current.
 
 ### Build locally
 
@@ -326,7 +374,8 @@ workflow builds into the local daemon first and pushes in a separate step.
 
 GHCR rejects uppercase repository names, but `github.repository` keeps the
 original casing and GitHub expressions have no `toLower()`. The workflow
-normalises it with `${GITHUB_REPOSITORY,,}`.
+normalises it with `${GITHUB_REPOSITORY,,}` — which is why the package path is
+`ghcr.io/bpmspaceug/...` in lowercase.
 
 `create_pizzasim_env.ps1` carries no `#Requires` statement on purpose:
 `[scriptblock]::Create()` rejects those, and the install one-liner depends on
