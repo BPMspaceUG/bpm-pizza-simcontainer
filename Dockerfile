@@ -68,25 +68,28 @@ RUN useradd -m -s /bin/bash -G sudo ${USERNAME} \
     && chmod 0440 /etc/sudoers.d/90-${USERNAME}
 
 # -----------------------------------------------------------------------------
-# System files (WSL config, shell environment, helper commands)
-# ~/.codex/config.toml is not copied here - devbox-bootstrap generates it,
+# System files and the three simbox commands:
+#   update-simbox      .env, apt, agents, repos, then the tests
+#   configure-simbox   fetch the .env and rewrite the agent configs
+#   test-simbox        the acceptance tests
+#
+# ~/.codex/config.toml is not copied here - configure-simbox generates it,
 # because the gateway base URL is only known once the .env is in place.
 # -----------------------------------------------------------------------------
 COPY wsl.conf /etc/wsl.conf
-COPY files/profile.d/devbox.sh /etc/profile.d/devbox.sh
-COPY files/bootstrap.sh /usr/local/bin/devbox-bootstrap
-COPY files/update.sh /usr/local/bin/devbox-update
+COPY files/profile.d/devbox.sh /etc/profile.d/simbox.sh
+COPY files/bootstrap.sh /usr/local/bin/configure-simbox
+COPY files/update.sh /usr/local/bin/update-simbox
 
-RUN chmod 0644 /etc/profile.d/devbox.sh \
-    && chmod 0755 /usr/local/bin/devbox-bootstrap /usr/local/bin/devbox-update
+RUN chmod 0644 /etc/profile.d/simbox.sh \
+    && chmod 0755 /usr/local/bin/configure-simbox /usr/local/bin/update-simbox
 
 # -----------------------------------------------------------------------------
 # Acceptance tests in ~/tests, next to ~/projects.
-# Run after a reset with:  ~/tests/run-all.sh
 # -----------------------------------------------------------------------------
 COPY --chown=${USERNAME}:${USERNAME} files/tests /home/${USERNAME}/tests
 RUN chmod 0755 /home/${USERNAME}/tests/*.sh \
-    && ln -sf /home/${USERNAME}/tests/run-all.sh /usr/local/bin/devbox-selftest
+    && ln -sf /home/${USERNAME}/tests/run-all.sh /usr/local/bin/test-simbox
 
 # -----------------------------------------------------------------------------
 # Project checkouts under ~/projects - this is the layout the recorded
