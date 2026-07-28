@@ -19,12 +19,12 @@ fi
 if printf '%s' "$out" | grep -qi 'no healthy deployments\|BadRequestError'; then
     list_models_hint
     fail "the gateway does not know the configured model" \
-         "Set CODEX_MODEL in the .env, then rerun devbox-bootstrap."
+         "Set CODEX_MODEL in the .env, then run: sudo simbox-configure"
 fi
 
 if printf '%s' "$out" | grep -qi 'wire_api\|is no longer supported'; then
     fail "Codex refused the config" \
-         "wire_api must be \"responses\" - rerun devbox-bootstrap."
+         "wire_api must be \"responses\" - run: sudo simbox-configure"
 fi
 
 if printf '%s' "$out" | grep -qi '404\|405\|not implemented'; then
