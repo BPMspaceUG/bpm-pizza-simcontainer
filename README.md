@@ -38,11 +38,12 @@ last build failed or a commit touched only files under `paths-ignore`.
 
 | | |
 |---|---|
-| Package page | <https://github.com/BPMspaceUG/bpm-pizza-simcontainer/pkgs/container/bpm-pizza-simcontainer> |
+| Package page | <https://github.com/orgs/BPMspaceUG/packages/container/package/bpm-pizza-simcontainer> |
 | Pull | `ghcr.io/bpmspaceug/bpm-pizza-simcontainer:latest` |
 
-Tagged `latest` and with the commit SHA. Useful for inspecting the image
-without importing it, or for converting it to a rootfs yourself.
+Tagged `latest` and with the commit SHA. Org packages are private by default,
+which GitHub reports as a 404 rather than a 403 — make the package public in
+its settings if you want to pull it without authenticating.
 
 On the Windows side the downloaded tarball is cached in
 `%TEMP%\pizza-sim-rootfs.tar.gz` and the imported distro lives in
@@ -151,7 +152,7 @@ sudo simbox-configure
 ```
 
 The value inside the file wins over the path remembered at install time
-(`/etc/devbox/env-source`). That is the point: if the file ever moves to a
+(`/etc/simbox/env-source`). That is the point: if the file ever moves to a
 different URL, announce the new address once in the **old** file, and every
 machine follows on its next update.
 
@@ -171,7 +172,8 @@ cat pizza.env | sudo simbox-configure --stdin           # from stdin
 Windows drive.
 
 A missing or unreachable source is never fatal: an empty `.env` is written, the
-distro stays usable, and the agents simply have no key yet.
+distro stays usable, and the agents simply have no key yet. An existing `.env`
+survives a failed refresh untouched.
 
 ---
 
@@ -309,6 +311,7 @@ wsl --unregister pizza-sim  # delete, irreversible
 | Codex: `Model metadata not found` | no metadata for gateway aliases | expected and harmless |
 | Codex refuses to run outside a repo | it requires a git repository | `cd` into one, or pass `--skip-git-repo-check` |
 | `.env` seems missing | it lives in `~/.env`, not `~/projects` | `cat ~/.env` |
+| 404 on the GHCR package page | org packages are private by default | make it public in the package settings |
 
 ---
 
@@ -325,9 +328,9 @@ cancels the running build when a newer push arrives.
 `.github/**` and dotfiles — none of which change the rootfs. Use
 **Actions → Build WSL rootfs → Run workflow** to rebuild anyway.
 
-The build fails rather than publishing a broken image: a failed clone, a
-missing checkout, a `check_environment.py` that does not pass, or a rootfs
-above the 2 GB release asset limit all stop it.
+The build fails rather than publishing a broken image. It stops on a failed
+clone, a missing checkout, a missing `simbox-*` command, a `check_environment.py`
+that does not pass, or a rootfs above the 2 GB release asset limit.
 
 The install one-liner reads the script from `raw.githubusercontent.com/.../main/`,
 not from the release asset, so script changes are live immediately.
@@ -354,7 +357,7 @@ Dockerfile                        image definition
 wsl.conf                          default user + systemd, baked into the image
 files/bootstrap.sh                -> /usr/local/bin/simbox-configure
 files/update.sh                   -> /usr/local/bin/simbox-update
-files/profile.d/devbox.sh         -> /etc/profile.d/simbox.sh
+files/profile.d/simbox.sh         -> /etc/profile.d/simbox.sh
 files/tests/                      -> ~/tests, run-all.sh linked as simbox-test
 scripts/create_pizzasim_env.ps1   Windows-side installer
 .github/workflows/build.yml       build, export, publish release asset
@@ -389,3 +392,7 @@ inside `bsdtar` with a confusing error.
 `simbox-configure` resolves the target account explicitly and never falls back
 to root: `wsl -u root -e` leaves `SUDO_USER` unset and `USER` set to root, which
 once sent the whole configuration to `/root` while reporting success.
+
+`run-all.sh` resolves `$0` through `readlink -f`, because it is also reachable
+as the `/usr/local/bin/simbox-test` symlink, where a plain `dirname` would point
+at the wrong directory.
