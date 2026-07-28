@@ -43,6 +43,7 @@ esac
 
 PROJECTS="${HOME}/projects"
 TESTS="${HOME}/tests"
+STATE_FILE="/etc/simbox/env-source"
 
 BOLD=$'\033[1m'; GREEN=$'\033[32m'; RED=$'\033[31m'; OFF=$'\033[0m'
 
@@ -81,8 +82,8 @@ check_env() {
     local n
     n=$(grep -c '=' "$HOME/.env" 2>/dev/null || echo 0)
     printf '  %s entries in ~/.env\n' "$n"
-    if [ -r /etc/devbox/env-source ]; then
-        printf '  source: %s\n' "$(head -n1 /etc/devbox/env-source)"
+    if [ -r "$STATE_FILE" ]; then
+        printf '  source: %s\n' "$(head -n1 "$STATE_FILE")"
     else
         printf '  %s\n' "no source remembered - pass --url once"
     fi
