@@ -9,23 +9,23 @@ header "gateway settings and .env"
 require_gateway
 
 entries=$(grep -c '=' "$HOME/.env" 2>/dev/null || echo 0)
-printf '  gateway : %s\n' "$LLM_PROXY_URL"
-printf '  key     : %s...\n' "$(printf '%s' "$LLM_PROXY_KEY" | head -c 12)"
+printf '  gateway : %s\n' "$LITELLM_PIZZA_URL"
+printf '  key     : %s...\n' "$(printf '%s' "$LITELLM_PIZZA_KEY" | head -c 12)"
 printf '  .env    : %s entries\n' "$entries"
 
-case "$LLM_PROXY_KEY" in
-    *\ *) fail "LLM_PROXY_KEY contains a space" \
+case "$LITELLM_PIZZA_KEY" in
+    *\ *) fail "LITELLM_PIZZA_KEY contains a space" \
                "Quote the value in the .env, otherwise it is cut off at the space." ;;
 esac
 
 code=$(curl -s -o /dev/null -w '%{http_code}' \
-       -H "Authorization: Bearer $LLM_PROXY_KEY" \
-       "$LLM_PROXY_URL/models")
+       -H "Authorization: Bearer $LITELLM_PIZZA_KEY" \
+       "$LITELLM_PIZZA_URL/models")
 
 case "$code" in
     200) ;;
     401|403) fail "gateway rejected the key (HTTP $code)" ;;
-    000)     fail "gateway not reachable at $LLM_PROXY_URL" ;;
+    000)     fail "gateway not reachable at $LITELLM_PIZZA_URL" ;;
     *)       fail "unexpected response from the gateway (HTTP $code)" ;;
 esac
 
