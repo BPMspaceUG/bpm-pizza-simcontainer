@@ -14,16 +14,17 @@ if [ -f "$HOME/.env" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Claude Code -> LLM gateway
+# Claude Code -> LiteLLM gateway
 #
 # The gateway serves an Anthropic-compatible /v1/messages endpoint. Claude Code
-# appends /v1/messages itself, so the trailing /v1 of LLM_PROXY_URL is stripped.
-# OPENROUTER_API_KEY is honoured as a fallback for setups without the gateway.
+# appends /v1/messages itself, so the trailing /v1 of LITELLM_PIZZA_URL is
+# stripped. OPENROUTER_API_KEY is honoured as a fallback for setups without
+# the gateway.
 # ---------------------------------------------------------------------------
-if [ -n "${LLM_PROXY_URL:-}" ]; then
-    _base="${LLM_PROXY_URL%/}"
+if [ -n "${LITELLM_PIZZA_URL:-}" ]; then
+    _base="${LITELLM_PIZZA_URL%/}"
     export ANTHROPIC_BASE_URL="${_base%/v1}"
-    export ANTHROPIC_AUTH_TOKEN="${LLM_PROXY_KEY:-}"
+    export ANTHROPIC_AUTH_TOKEN="${LITELLM_PIZZA_KEY:-}"
     unset _base
 elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
     export ANTHROPIC_BASE_URL="https://openrouter.ai/api"
@@ -31,13 +32,13 @@ elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
 fi
 
 export ANTHROPIC_API_KEY=""          # must be explicitly empty
-export ANTHROPIC_MODEL="${CLAUDE_MODEL:-kimi-k3}"
-export ANTHROPIC_SMALL_FAST_MODEL="${CLAUDE_MODEL:-kimi-k3}"
+export ANTHROPIC_MODEL="${CLAUDE_MODEL:-openrouter/moonshotai/kimi-k2.5}"
+export ANTHROPIC_SMALL_FAST_MODEL="${CLAUDE_MODEL:-openrouter/moonshotai/kimi-k2.5}"
 
 # ---------------------------------------------------------------------------
-# Codex CLI -> LLM gateway
+# Codex CLI -> LiteLLM gateway
 # ---------------------------------------------------------------------------
-# The provider block lives in ~/.codex/config.toml and reads LLM_PROXY_KEY,
+# The provider block lives in ~/.codex/config.toml and reads LITELLM_PIZZA_KEY,
 # which the block above already exported from ~/.env.
 
 # Start in the project directory - this is what the exercise videos show.
