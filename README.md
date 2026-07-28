@@ -1,10 +1,10 @@
 # bpm-pizza-simcontainer
 
-Prebuilt WSL development environment for the BPM Pizza Sim training.
+Prebuilt WSL environment for the BPM Pizza Sim training.
 
 One command on a Windows machine produces a ready Linux distro: both project
 repos cloned, a working PyTorch environment for the exercises, both coding
-agents installed and pointed at OpenRouter, and a passwordless user.
+agents wired to the LiteLLM gateway, and a passwordless user.
 
 Nothing needs to be installed on the Windows side except WSL itself.
 
@@ -15,13 +15,22 @@ Nothing needs to be installed on the Windows side except WSL itself.
 | | |
 |---|---|
 | Base | Debian 13 (trixie) |
-| User | `robert` — no password, passwordless `sudo` |
-| CLI tools | git, curl, wget, jq, zip, unzip, ripgrep, nano, less, build-essential, openssh-client |
+| User | `roberto` — no password, passwordless `sudo` |
+| CLI tools | git, curl, wget, jq, xxd, zip, unzip, ripgrep, nano, less, bubblewrap, build-essential, openssh-client |
 | Runtimes | Python 3 (system), Node.js 22 |
-| Agents | `claude` (Claude Code), `codex` (Codex CLI) — both routed through OpenRouter |
+| Agents | `claude` (Claude Code), `codex` (Codex CLI) — both routed through the gateway |
 | ML env | `~/projects/bpm-pizza-ml/.venv` with torch, torchvision, tqdm, Pillow (CPU wheels) |
 | Projects | `~/projects/bpm-pizza-ml`, `~/projects/bpm-pizza-vibecoding` |
+| Tests | `~/tests` |
 | Login dir | `~/projects` |
+
+### The three simbox commands
+
+| Command | Purpose |
+|---|---|
+| `simbox-update` | The one command after a reset: `.env`, apt, agents, repos, then the tests |
+| `simbox-configure` | Fetch the `.env` and rewrite both agent configs |
+| `simbox-test` | Run the acceptance tests (same as `~/tests/run-all.sh`) |
 
 ---
 
@@ -31,164 +40,202 @@ Run this in **PowerShell on Windows** — not inside WSL. No prior download, no
 `Set-ExecutionPolicy`, no admin rights:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_pizzasim_env.ps1))) user:password
+$s = "https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_pizzasim_env.ps1"
+& ([scriptblock]::Create((irm $s))) -EnvUrl <full-url-to-the-env-file> -SetDefault -FreshDownload
+```
+
+Then, inside the distro:
+
+```bash
+simbox-update
 ```
 
 `irm` pulls the script as text, `[scriptblock]::Create()` turns it into an
 executable block, `&` runs it and passes the arguments through. Because the
 script never touches disk as a file, the execution policy does not apply.
-
 The plain `irm ... | iex` form cannot take parameters — hence the scriptblock.
 
-Prerequisite on the target machine: WSL (`wsl --install`). If it is missing,
-the script stops with a clear message instead of a cryptic error.
+Prerequisite on the target machine: WSL (`wsl --install`).
 
-### What it does
+### Parameters of `create_pizzasim_env.ps1`
 
-1. Downloads `pizza-sim-rootfs.tar.gz` from the latest GitHub release
-   (cached in `%TEMP%` — delete it to force a fresh download)
-2. Picks a free distro name and imports the rootfs into `%LOCALAPPDATA%\WSL\<name>`
-3. Runs `devbox-bootstrap` inside the new distro to place the `.env`
-4. Restarts the distro so `/etc/wsl.conf` takes effect, then opens a shell
+| Parameter | Effect |
+|---|---|
+| `-EnvUrl <url>` | Full URL of the `.env`, **including the filename**. Works with or without credentials. |
+| `-EnvFile <path>` | Full path to a local `.env` on Windows, including the filename. No network request. |
+| `user:password` | Basic auth against the default endpoint (`https://www.aipizzasim.com/getenv`) |
+| `-NoEnv` | Skip the `.env` entirely — the distro comes up with an empty one |
+| `-Name <name>` | Distro name, default `pizza-sim`. Taken names get a numeric suffix. |
+| `-SetDefault` | Make this the WSL default, so a bare `wsl` opens it |
+| `-Force` | Replace an existing distro of the same name |
+| `-FreshDownload` | Discard the cached rootfs in `%TEMP%` and download again |
+| `-Rootfs <path>` | Import a locally built tarball instead of the release asset |
 
 ---
 
-## Where the `.env` comes from
+## The `.env` file
 
-The `.env` is never baked into the image. It is placed at import time, so the
+The `.env` is never baked into the image — it is fetched at import time, so the
 same artifact works for every participant and contains no credentials.
+It lands in `~/.env`, not in `~/projects`.
 
-Four sources, evaluated in this order:
+### Keys
 
-| Option | Behaviour |
-|---|---|
-| `-EnvFile <path>` | Read a local file on Windows and pipe it in. No network request, no credentials needed. |
-| `-EnvUrl <url>` + `user:password` | Fetch from an alternate endpoint instead of the default |
-| `user:password` | Fetch from the default endpoint (`https://www.aipizzasim.com/getenv`) |
-| `-NoEnv` | Skip entirely — the distro comes up with an empty `.env` |
+| Key | Required | Meaning |
+|---|---|---|
+| `LLM_PROXY_URL` | yes | Gateway base, e.g. `https://litellm.aipizzasim.com/v1` |
+| `LLM_PROXY_KEY` | yes | Participant-facing key. The real upstream key stays on the gateway. |
+| `ENV_SELF_URL` | recommended | The URL this file is served from — see below |
+| `CLAUDE_MODEL` | recommended | Model alias for Claude Code |
+| `CODEX_MODEL` | recommended | Model alias for Codex CLI |
+| `CODEX_WIRE_API` | no | `responses` (default) or `chat` |
+| `CLAUDE_THEME` | no | `dark` (default), `light`, … |
+| `PIZZASIM_URL` | exercises | Base URL of the simulation |
+| `PIZZASIM_API_KEY` | exercises | API key for the simulation |
+| `PIZZERIA_ID` | exercises | Which pizzeria the machine works on |
 
-If no option is given, the script asks once. Pressing Enter skips.
+Values containing spaces must be quoted. Otherwise everything after the space
+is silently dropped when the file is sourced, and the key arrives truncated.
+
+### `ENV_SELF_URL` — the file names its own location
+
+```
+ENV_SELF_URL=https://ico-cdn.pages.dev/<token>/pizza.env
+```
+
+With this set, a machine remembers where its `.env` came from. Refreshing after
+a change on the CDN then needs no arguments at all:
+
+```bash
+sudo simbox-configure
+```
+
+The value inside the file wins over the path remembered at install time
+(`/etc/devbox/env-source`). That is the point: if the file ever moves to a
+different URL, announce the new address once in the **old** file, and every
+machine follows on its next update.
+
+`ENV_FILE` is accepted as an alias, but `ENV_SELF_URL` is the better name —
+`ENV_FILE` reads like a path rather than a URL.
+
+### Other ways to supply it
+
+```bash
+sudo simbox-configure                                   # refresh from the remembered URL
+sudo simbox-configure --url https://example.com/x.env   # from a different URL
+sudo simbox-configure --file /mnt/c/sim/pizza.env       # from the Windows drive
+cat pizza.env | sudo simbox-configure --stdin           # from stdin
+```
+
+`--file` takes any path inside the distro, so `/mnt/c/...` reaches the whole
+Windows drive.
 
 A missing or unreachable source is never fatal: an empty `.env` is written, the
 distro stays usable, and the agents simply have no key yet.
 
-**`-EnvFile` takes the full path including the filename.** Nothing is hardcoded
-and the name does not matter — whatever file you point at is copied into the
-distro as `~/.env`:
+---
 
-```powershell
--EnvFile C:\sim\pizza.env
--EnvFile C:\sim\training-may.env
--EnvFile C:\Users\rob\Downloads\whatever.txt
-```
+## Model aliases
 
-### Examples
+Both agents talk to the gateway, which forwards to OpenRouter. The aliases must
+match what the gateway actually serves — **every alias there carries an
+`openrouter/` prefix**. Bare names such as `kimi-k3` produce
+`400 no healthy deployments for this model`.
 
-```powershell
-$s = "https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_pizzasim_env.ps1"
-
-& ([scriptblock]::Create((irm $s))) user:password
-& ([scriptblock]::Create((irm $s))) -EnvFile C:\sim\pizza.env
-& ([scriptblock]::Create((irm $s))) user:password -EnvUrl https://staging.example.com/getenv
-& ([scriptblock]::Create((irm $s))) -NoEnv -Name pizza-sim-test
-```
-
-### From inside the distro
-
-`devbox-bootstrap` does the same thing and can be rerun at any time — after the
-endpoint comes online, after credentials change, or to swap in a different
-`.env` mid-session:
+List the real ones:
 
 ```bash
-sudo devbox-bootstrap user:password
-sudo devbox-bootstrap user:password --url https://staging.example.com/getenv
-sudo devbox-bootstrap --file /mnt/c/sim/pizza.env
-cat pizza.env | sudo devbox-bootstrap --stdin
+curl -s -H "Authorization: Bearer $LLM_PROXY_KEY" $LLM_PROXY_URL/models \
+  | jq -r '.data[].id'
 ```
 
-`--file` also takes the full path including the filename, and accepts any path
-*inside* the distro — so `/mnt/c/...` reaches the whole Windows drive without
-involving PowerShell at all.
+Current defaults, verified end to end:
 
-Equivalent environment variables for scripted use: `DEVBOX_ENV_FILE`,
-`DEVBOX_ENV_URL`, `DEVBOX_BASICAUTH`.
-
-After rerunning the bootstrap, restart the distro so the new environment is
-picked up:
-
-```powershell
-wsl --terminate pizza-sim
 ```
+CLAUDE_MODEL=openrouter/moonshotai/kimi-k2.5
+CODEX_MODEL=openrouter/z-ai/glm-5.1
+```
+
+Claude Code talks to the gateway's Anthropic-compatible `/v1/messages`; the
+trailing `/v1` of `LLM_PROXY_URL` is stripped because Claude Code appends the
+path itself. `ANTHROPIC_API_KEY` is deliberately set to an empty string — a
+leftover value there overrides the auth token.
+
+Codex uses `/v1/responses`. `wire_api = "chat"` is not an option: Codex refuses
+to load a config containing it since the chat protocol was retired.
+
+Note that `ANTHROPIC_MODEL=... claude` on the command line has **no effect** —
+`~/.claude/settings.json` sets it in its `env` block, which wins over the shell.
+Use `claude --model <alias>` for a one-off, or fix the `.env` and rerun
+`simbox-configure`.
 
 ---
 
-## The exercise environment
+## `simbox-update`
 
-The exercises at <https://www.aipizzasim.com/exercises/1> expect a virtualenv
-inside `bpm-pizza-ml`. It is prebuilt in the image, so the session start works
-exactly as written on the exercise page:
+The first command on a reset machine. In order:
 
-```bash
-cd bpm-pizza-ml
-source .venv/bin/activate
-python3 check_environment.py
-```
+0. refresh `~/.env` from the remembered URL
+1. `apt update` + `upgrade` + `autoremove`
+2. Claude Code to `@latest`
+3. Codex CLI to `@latest`
+4. `git pull --ff-only` in both project repos
+5. the acceptance tests
 
-Expected final line:
-
-```
-All dependencies and data are present. You are ready to start.
-```
-
-The login shell already lands in `~/projects`, so `cd bpm-pizza-ml` works
-straight away.
-
-`check_environment.py` also runs during the image build. If torch, torchvision,
-tqdm, Pillow or any dataset were missing, the build fails — a broken image never
-reaches the training room.
-
-**CPU wheels on purpose.** torch is installed from
-`https://download.pytorch.org/whl/cpu`. The CUDA build is several gigabytes and
-useless on a training laptop; the rootfs also has to stay under the 2 GB GitHub
-release asset limit.
-
-The clones are shallow (`--depth 1`) for the same reason. If full history is
-needed:
+It ends with `READY` or `NOT READY`, and its exit code follows the tests.
 
 ```bash
-git -C ~/projects/bpm-pizza-ml fetch --unshallow
+simbox-update             # everything
+simbox-update --check     # report only, change nothing
+simbox-update --no-test   # steps 0-4
+simbox-update --env       # only the .env
+simbox-update --system    # only apt
+simbox-update --agents    # only claude + codex
+simbox-update --repos     # only git pull
+simbox-update --test      # only the tests
 ```
+
+The PyTorch venv is deliberately not upgraded — the exercises and the recorded
+videos are pinned to the version baked into the image.
+
+`git pull` runs with `--ff-only`. If a participant committed locally, the pull
+stops and says so instead of overwriting work.
 
 ---
 
-## Coding agents
+## Acceptance tests
 
-Both agents are installed globally via npm and configured against OpenRouter.
-They read `OPENROUTER_API_KEY` from `~/.env`.
+In `~/tests`, next to `~/projects`. Run them all with `simbox-test`, or one at
+a time.
 
-| Agent | Model | Config |
-|---|---|---|
-| `claude` | `moonshotai/kimi-k3` | `~/.claude/settings.json` + `/etc/profile.d/devbox.sh` |
-| `codex` | `z-ai/glm-5.2` | `~/.codex/config.toml` |
+| Test | Proves |
+|---|---|
+| `00-preconditions` | gateway reachable, key accepted, `.env` complete |
+| `01-claude` | Claude Code — `/v1/messages` and the model alias |
+| `02-codex` | Codex — `/v1/responses` and the model alias |
+| `03-agents-chained` | Claude's Bash tool and agent-to-agent invocation |
+| `04-audio-roundtrip` | text-to-speech and speech-to-text in both directions |
+| `05-exercise-env` | PyTorch, datasets and both repos in place |
 
-Claude Code talks to OpenRouter's Anthropic-compatible endpoint
-(`https://openrouter.ai/api`), so no local proxy is needed. `ANTHROPIC_API_KEY`
-is deliberately set to an empty string — a leftover value there overrides the
-auth token.
+```bash
+simbox-test          # all
+simbox-test 03       # only the chained agent test
+~/tests/02-codex.sh  # directly
+```
 
-Codex uses a custom provider block with `wire_api = "responses"`. That is
-mandatory since OpenAI removed the `chat` wire protocol, and the block has to
-live in the user-level `~/.codex/config.toml`; Codex ignores it in a
-project-local one.
+If `00-preconditions` fails the runner stops — nothing else can pass without
+the gateway. Every failure names the likely cause and the next step.
 
-Both configs are rewritten by `devbox-bootstrap` whenever it runs.
+The audio test generates its own mp3 through the gateway and transcribes it
+back, so no audio fixture ships in the image. It checks file size and mp3 magic
+bytes before transcribing, otherwise a JSON error page would pass as audio.
 
 ---
 
 ## Several instances side by side
 
-Existing distros are never touched. Running the command twice auto-suffixes the
-name: `pizza-sim`, `pizza-sim-2`, `pizza-sim-3`, …
+Existing distros are never touched. Running the install command twice
+auto-suffixes the name: `pizza-sim`, `pizza-sim-2`, …
 
 ```powershell
 wsl --list --verbose        # what exists
@@ -198,46 +245,47 @@ wsl --terminate pizza-sim   # stop
 wsl --unregister pizza-sim  # delete, irreversible
 ```
 
-Use `-Name` to choose explicitly, `-Force` to replace an existing distro of the
-same name.
-
-**What is shared and what is not:**
+`wsl -d <name>` is a Windows command — it does not exist inside the distro.
 
 | | |
 |---|---|
 | Filesystem, packages, users, home | separate — each distro has its own `ext4.vhdx` |
 | Kernel, RAM, the VM itself | shared — all distros run in one WSL2 VM |
-| Network and `localhost` | shared — port 3000 in one distro blocks it in the others |
+| Network and `localhost` | shared — port 3000 in one blocks it in the others |
 | `/mnt/c` | shared — same Windows drive |
-
-The network namespace is the usual surprise when running two instances at once.
-
-Throwing an instance away and starting over takes about two minutes:
-`wsl --unregister`, then the install command again.
 
 ---
 
-## Rebuilding the image
+## Troubleshooting
 
-CI lives in `.github/workflows/build.yml`. It builds the Docker image, pushes it
-to GHCR, converts it to a WSL rootfs and publishes it as the `rootfs-latest`
-release.
+| Symptom | Cause | Fix |
+|---|---|---|
+| `400 no healthy deployments for this model` | alias does not exist on the gateway | list the real aliases, correct the `.env`, `sudo simbox-configure` |
+| `Missing environment variable: LLM_PROXY_KEY` | `.env` empty or not fetched | `sudo simbox-configure`, then `exec bash -l` |
+| `wire_api = "chat" is no longer supported` | image predates the fix | re-import with `-FreshDownload` |
+| `ANTHROPIC_MODEL=` on the command line is ignored | `settings.json` overrides the shell | `claude --model <alias>` |
+| `Truncated tar archive` during import | incomplete download | rerun with `-FreshDownload` |
+| `download failed` | no release published yet, or build still running | check Actions, or build locally with `-Rootfs` |
+| Codex: `Model metadata not found` | no metadata for gateway aliases | expected and harmless |
+| Codex refuses to run outside a repo | it requires a git repository | `cd` into one, or pass `--skip-git-repo-check` |
+| `.env` seems missing | it lives in `~/.env`, not `~/projects` | `cat ~/.env` |
 
-**Only one build runs at a time.** A `concurrency` group with
-`cancel-in-progress: true` cancels the running build when a newer push arrives,
-instead of stacking parallel runs.
+---
+
+## Building
+
+CI in `.github/workflows/build.yml` builds the image, pushes it to GHCR,
+converts it to a WSL rootfs and publishes it as the `rootfs-latest` release.
+
+**One build at a time.** A `concurrency` group with `cancel-in-progress: true`
+cancels the running build when a newer push arrives.
 
 **Not every commit builds.** `paths-ignore` covers `**.md`, `scripts/**`,
-`.github/**`, `.gitattributes`, `.gitignore` and `LICENSE` — none of which change
-the rootfs. Use **Actions → Build WSL rootfs → Run workflow** to rebuild anyway,
-for example to refresh the `create_pizzasim_env.ps1` attached to the release.
-
-A weekly cron rebuild keeps apt packages, npm globals and the repo checkouts
-current.
+`.github/**` and dotfiles — none of which change the rootfs. Use
+**Actions → Build WSL rootfs → Run workflow** to rebuild anyway.
 
 The install one-liner reads the script from `raw.githubusercontent.com/.../main/`,
-not from the release asset — script changes are live immediately and do not
-depend on a build.
+not from the release asset, so script changes are live immediately.
 
 ### Build locally
 
@@ -249,8 +297,6 @@ docker export (docker create pizza-sim) -o rootfs.tar
 .\scripts\create_pizzasim_env.ps1 -Rootfs .\rootfs.tar -NoEnv
 ```
 
-This needs Docker on the Windows machine — exactly what the release path avoids.
-
 ---
 
 ## Layout
@@ -258,31 +304,13 @@ This needs Docker on the Windows machine — exactly what the release path avoid
 ```
 Dockerfile                        image definition
 wsl.conf                          default user + systemd, baked into the image
-files/bootstrap.sh                -> /usr/local/bin/devbox-bootstrap
-files/codex-config.toml           -> ~/.codex/config.toml
-files/profile.d/devbox.sh         -> /etc/profile.d/devbox.sh
+files/bootstrap.sh                -> /usr/local/bin/simbox-configure
+files/update.sh                   -> /usr/local/bin/simbox-update
+files/profile.d/devbox.sh         -> /etc/profile.d/simbox.sh
+files/tests/                      -> ~/tests, run-all.sh linked as simbox-test
 scripts/create_pizzasim_env.ps1   Windows-side installer
 .github/workflows/build.yml       build, export, publish release asset
 ```
-
----
-
-## Troubleshooting
-
-**`download failed`** — no release published yet, or the build is still running.
-Check Actions, or build locally with `-Rootfs`.
-
-**Agents report authentication errors** — `~/.env` has no `OPENROUTER_API_KEY`.
-Rerun `sudo devbox-bootstrap` with a working source, then `wsl --terminate`.
-
-**`check_environment.py` reports missing data** — the datasets come from the
-`bpm-pizza-ml` checkout. If they are absent, the image is stale; rebuild via
-Run workflow.
-
-**Cached rootfs** — the tarball is kept in `%TEMP%\pizza-sim-rootfs.tar.gz` and
-reused. Delete it to pull a newer release.
-
-**Port already in use across distros** — expected, see the sharing table above.
 
 ---
 
@@ -290,17 +318,25 @@ reused. Delete it to pull a newer release.
 
 `docker export` flattens the image and discards all image metadata. `ENV`,
 `CMD`, `ENTRYPOINT` and `WORKDIR` do not survive the conversion to a WSL rootfs.
-That is why every environment variable is set in `/etc/profile.d/devbox.sh`
+That is why every environment variable is set in `/etc/profile.d/simbox.sh`
 rather than via `ENV` in the Dockerfile.
 
 `load: true` and `push: true` cannot be combined in one buildx call, so the
-workflow builds into the local daemon first and pushes in a separate step. The
-image has to be in the local daemon anyway for `docker create` / `docker export`.
+workflow builds into the local daemon first and pushes in a separate step.
 
 GHCR rejects uppercase repository names, but `github.repository` keeps the
-original casing. GitHub expressions have no `toLower()`, so the workflow
-normalises it with bash parameter expansion: `${GITHUB_REPOSITORY,,}`.
+original casing and GitHub expressions have no `toLower()`. The workflow
+normalises it with `${GITHUB_REPOSITORY,,}`.
 
-`create_pizzasim_env.ps1` deliberately carries no `#Requires` statement.
-`[scriptblock]::Create()` rejects those, and the install one-liner depends on it.
-The version check lives in the script body instead.
+`create_pizzasim_env.ps1` carries no `#Requires` statement on purpose:
+`[scriptblock]::Create()` rejects those, and the install one-liner depends on
+it. The version check lives in the script body instead.
+
+Downloads use `curl.exe` rather than `Invoke-WebRequest`, which truncates files
+of this size on Windows PowerShell 5.1. The result is verified against
+`Content-Length` and discarded on mismatch, because a partial rootfs fails deep
+inside `bsdtar` with a confusing error.
+
+`simbox-configure` resolves the target account explicitly and never falls back
+to root: `wsl -u root -e` leaves `SUDO_USER` unset and `USER` set to root, which
+once sent the whole configuration to `/root` while reporting success.
