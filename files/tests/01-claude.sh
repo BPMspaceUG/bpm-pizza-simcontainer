@@ -14,7 +14,7 @@ printf '%s\n' "$out" | sed 's/^/  /'
 if printf '%s' "$out" | grep -qi 'no healthy deployments\|model not found\|BadRequestError'; then
     list_models_hint
     fail "the gateway does not know the configured model" \
-         "Set CLAUDE_MODEL in the .env, then rerun devbox-bootstrap."
+         "Set CLAUDE_MODEL in the .env, then run: sudo simbox-configure"
 fi
 
 if printf '%s' "$out" | grep -qi 'API Error\|401\|403'; then
