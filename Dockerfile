@@ -77,7 +77,7 @@ RUN useradd -m -s /bin/bash -G sudo ${USERNAME} \
 # because the gateway base URL is only known once the .env is in place.
 # -----------------------------------------------------------------------------
 COPY wsl.conf /etc/wsl.conf
-COPY files/profile.d/devbox.sh /etc/profile.d/simbox.sh
+COPY files/profile.d/simbox.sh /etc/profile.d/simbox.sh
 COPY files/bootstrap.sh /usr/local/bin/simbox-configure
 COPY files/update.sh /usr/local/bin/simbox-update
 
@@ -90,6 +90,12 @@ RUN chmod 0644 /etc/profile.d/simbox.sh \
 COPY --chown=${USERNAME}:${USERNAME} files/tests /home/${USERNAME}/tests
 RUN chmod 0755 /home/${USERNAME}/tests/*.sh \
     && ln -sf /home/${USERNAME}/tests/run-all.sh /usr/local/bin/simbox-test
+
+# Fail the build if a command did not land where it is expected.
+RUN test -x /usr/local/bin/simbox-configure \
+    && test -x /usr/local/bin/simbox-update \
+    && test -x /home/${USERNAME}/tests/run-all.sh \
+    && test -f /etc/profile.d/simbox.sh
 
 # -----------------------------------------------------------------------------
 # Project checkouts under ~/projects - this is the layout the recorded
