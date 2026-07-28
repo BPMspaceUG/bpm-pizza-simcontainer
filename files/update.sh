@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# devbox-update
+# simbox-update
 #
 # The first command a trainer runs on a freshly reset lab machine. In order:
 #
@@ -12,14 +12,14 @@
 #   5. the acceptance tests in ~/tests
 #
 # Usage:
-#   devbox-update             all steps
-#   devbox-update --check     report what is outdated, change nothing
-#   devbox-update --no-test   steps 0-4 only
-#   devbox-update --env       only refresh the .env
-#   devbox-update --agents    only claude + codex
-#   devbox-update --system    only apt
-#   devbox-update --repos     only git pull
-#   devbox-update --test      only the acceptance tests
+#   simbox-update             all steps
+#   simbox-update --check     report what is outdated, change nothing
+#   simbox-update --no-test   steps 0-4 only
+#   simbox-update --env       only refresh the .env
+#   simbox-update --agents    only claude + codex
+#   simbox-update --system    only apt
+#   simbox-update --repos     only git pull
+#   simbox-update --test      only the acceptance tests
 #
 # Exit code 0 means the machine is updated and every test passed.
 # =============================================================================
@@ -65,14 +65,14 @@ show_versions() {
 # --- 0. environment file ----------------------------------------------------
 do_env() {
     step "0. refreshing .env"
-    # A bare bootstrap re-fetches from ENV_SELF_URL in the current file, or
-    # from the URL remembered at install time.
-    if sudo devbox-bootstrap; then
+    # A bare simbox-configure re-fetches from ENV_SELF_URL in the current file,
+    # or from the URL remembered at install time.
+    if sudo simbox-configure; then
         return 0
     fi
     printf '  %s\n' "could not refresh the .env."
     printf '  %s\n' "If this machine never had one, provide the URL once:"
-    printf '  %s\n' "  sudo devbox-bootstrap --url <cdn-url>"
+    printf '  %s\n' "  sudo simbox-configure --url <cdn-url>"
     return 1
 }
 
@@ -179,7 +179,7 @@ case "$MODE" in
         check_system
         check_agents
         check_repos
-        printf '\n%s\n' "Apply everything with:  devbox-update"
+        printf '\n%s\n' "Apply everything with:  simbox-update"
         ;;
     env)    do_env || rc=$? ;;
     system) do_system; show_versions ;;
