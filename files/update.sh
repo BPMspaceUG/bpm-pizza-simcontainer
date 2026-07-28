@@ -4,6 +4,7 @@
 #
 # The first command a trainer runs on a freshly reset lab machine. In order:
 #
+#   0. refresh ~/.env from the CDN
 #   1. Debian packages
 #   2. Claude Code
 #   3. Codex CLI
@@ -11,9 +12,10 @@
 #   5. the acceptance tests in ~/tests
 #
 # Usage:
-#   devbox-update             all five steps
+#   devbox-update             all steps
 #   devbox-update --check     report what is outdated, change nothing
-#   devbox-update --no-test   steps 1-4 only
+#   devbox-update --no-test   steps 0-4 only
+#   devbox-update --env       only refresh the .env
 #   devbox-update --agents    only claude + codex
 #   devbox-update --system    only apt
 #   devbox-update --repos     only git pull
@@ -28,12 +30,13 @@ RUN_TEST=1
 
 case "${1:-}" in
     --check)   MODE="check" ;;
+    --env)     MODE="env";     RUN_TEST=0 ;;
     --agents)  MODE="agents";  RUN_TEST=0 ;;
     --system)  MODE="system";  RUN_TEST=0 ;;
     --repos)   MODE="repos";   RUN_TEST=0 ;;
     --test)    MODE="test" ;;
     --no-test) MODE="all";     RUN_TEST=0 ;;
-    -h|--help) sed -n '3,22p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    -h|--help) sed -n '3,26p' "$0" | sed 's/^# \?//'; exit 0 ;;
     "")        MODE="all" ;;
     *)         echo "unknown option: $1" >&2; exit 2 ;;
 esac
@@ -59,7 +62,33 @@ show_versions() {
     printf '  %-14s %s\n' "debian"  "$(. /etc/os-release; echo "$VERSION")"
 }
 
-# --- check ------------------------------------------------------------------
+# --- 0. environment file ----------------------------------------------------
+do_env() {
+    step "0. refreshing .env"
+    # A bare bootstrap re-fetches from ENV_SELF_URL in the current file, or
+    # from the URL remembered at install time.
+    if sudo devbox-bootstrap; then
+        return 0
+    fi
+    printf '  %s\n' "could not refresh the .env."
+    printf '  %s\n' "If this machine never had one, provide the URL once:"
+    printf '  %s\n' "  sudo devbox-bootstrap --url <cdn-url>"
+    return 1
+}
+
+check_env() {
+    step "0. environment file"
+    local n
+    n=$(grep -c '=' "$HOME/.env" 2>/dev/null || echo 0)
+    printf '  %s entries in ~/.env\n' "$n"
+    if [ -r /etc/devbox/env-source ]; then
+        printf '  source: %s\n' "$(head -n1 /etc/devbox/env-source)"
+    else
+        printf '  %s\n' "no source remembered - pass --url once"
+    fi
+}
+
+# --- checks -----------------------------------------------------------------
 check_system() {
     step "1. system packages"
     sudo apt-get update -qq 2>/dev/null
@@ -146,16 +175,21 @@ rc=0
 case "$MODE" in
     check)
         show_versions
+        check_env
         check_system
         check_agents
         check_repos
         printf '\n%s\n' "Apply everything with:  devbox-update"
         ;;
+    env)    do_env || rc=$? ;;
     system) do_system; show_versions ;;
     agents) do_agents; show_versions ;;
     repos)  do_repos ;;
     test)   do_test || rc=$? ;;
     all)
+        # A stale .env would make the tests fail for the wrong reason, so this
+        # goes first. A failure here is not fatal - the rest still runs.
+        do_env || rc=$?
         do_system
         do_agents
         do_repos
@@ -174,7 +208,7 @@ if [ "$MODE" = "all" ] && [ "$RUN_TEST" = "1" ]; then
     if [ "$rc" -eq 0 ]; then
         printf '%s the machine is updated and ready for the training.\n' "${GREEN}READY${OFF}"
     else
-        printf '%s updates applied, but the acceptance tests failed.\n' "${RED}NOT READY${OFF}"
+        printf '%s something did not pass. Check the output above.\n' "${RED}NOT READY${OFF}"
         printf '      Rerun a single test from %s for detail.\n' "$TESTS"
     fi
 fi
