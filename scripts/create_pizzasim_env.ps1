@@ -110,7 +110,7 @@ if ($EnvFile -and -not (Test-Path $EnvFile)) {
 }
 
 # --- where does the .env come from? ------------------------------------------
-# Precedence matches devbox-bootstrap: file, then url, then default endpoint.
+# Precedence matches simbox-configure: file, then url, then default endpoint.
 $envMode = "none"
 
 if ($NoEnv) {
@@ -245,16 +245,27 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # --- bootstrap ---------------------------------------------------------------
+# The command was renamed from devbox-bootstrap to simbox-configure. Resolve it
+# inside the distro so this script keeps working with older rootfs releases.
 Write-Step "bootstrapping"
-if ($envMode -eq "file") {
+
+$resolve = 'command -v simbox-configure || command -v devbox-bootstrap'
+$bootstrapCmd = (wsl.exe -d $Name -u root -e sh -c $resolve | Select-Object -First 1)
+if ($bootstrapCmd) { $bootstrapCmd = $bootstrapCmd.Trim() }
+
+if (-not $bootstrapCmd) {
+    Write-Warning "no bootstrap command found in the image - is the rootfs current?"
+    Write-Warning "The distro exists but has no .env."
+}
+elseif ($envMode -eq "file") {
     Get-Content -Raw -LiteralPath $EnvFile |
-        wsl.exe -d $Name -u root -e /usr/local/bin/devbox-bootstrap --stdin
+        wsl.exe -d $Name -u root -e $bootstrapCmd --stdin
 }
 else {
     wsl.exe -d $Name -u root -e env `
         DEVBOX_BASICAUTH="$BasicAuth" `
         DEVBOX_ENV_URL="$EnvUrl" `
-        /usr/local/bin/devbox-bootstrap
+        $bootstrapCmd
 }
 
 # Restart so /etc/wsl.conf (default user, systemd) takes effect
@@ -280,7 +291,8 @@ else {
     Write-Host "  enter    : wsl -d $Name"
     Write-Host "  default  : wsl --set-default $Name"
 }
-Write-Host "  fill .env: wsl -d $Name -u root -- devbox-bootstrap user:password"
+Write-Host "  next step: simbox-update      (inside the distro)"
+Write-Host "  fix .env : sudo simbox-configure --url <url>"
 Write-Host "  discard  : wsl --unregister $Name"
 Write-Host ""
 
