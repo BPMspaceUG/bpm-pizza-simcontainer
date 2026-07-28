@@ -19,8 +19,8 @@ rm -f "$MP3"
 
 # --- text to speech ---------------------------------------------------------
 code=$(curl -sS -o "$MP3" -w '%{http_code}' \
-       -X POST "$LLM_PROXY_URL/audio/speech" \
-       -H "Authorization: Bearer $LLM_PROXY_KEY" \
+       -X POST "$LITELLM_PIZZA_URL/audio/speech" \
+       -H "Authorization: Bearer $LITELLM_PIZZA_KEY" \
        -H "Content-Type: application/json" \
        -d "{\"model\":\"${TTS_MODEL}\",\"voice\":\"alloy\",\"input\":\"${SENTENCE}\"}")
 
@@ -40,8 +40,8 @@ case "$magic" in
 esac
 
 # --- speech to text ---------------------------------------------------------
-transcript=$(curl -sS -X POST "$LLM_PROXY_URL/audio/transcriptions" \
-             -H "Authorization: Bearer $LLM_PROXY_KEY" \
+transcript=$(curl -sS -X POST "$LITELLM_PIZZA_URL/audio/transcriptions" \
+             -H "Authorization: Bearer $LITELLM_PIZZA_KEY" \
              -F "file=@${MP3}" \
              -F "model=${STT_MODEL}" \
              -F "language=de" | jq -r '.text // empty')
