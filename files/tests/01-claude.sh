@@ -21,6 +21,6 @@ if printf '%s' "$out" | grep -qi 'API Error\|401\|403'; then
     fail "the gateway refused the request"
 fi
 
-check_answer "$out" || fail "unexpected answer - expected 391 and Zagreb"
+check_answer "$out" || fail "the reply did not contain the token ${NONCE}"
 
 pass "/v1/messages works, model alias resolves"
