@@ -69,27 +69,27 @@ RUN useradd -m -s /bin/bash -G sudo ${USERNAME} \
 
 # -----------------------------------------------------------------------------
 # System files and the three simbox commands:
-#   update-simbox      .env, apt, agents, repos, then the tests
-#   configure-simbox   fetch the .env and rewrite the agent configs
-#   test-simbox        the acceptance tests
+#   simbox-update      .env, apt, agents, repos, then the tests
+#   simbox-configure   fetch the .env and rewrite the agent configs
+#   simbox-test        the acceptance tests
 #
-# ~/.codex/config.toml is not copied here - configure-simbox generates it,
+# ~/.codex/config.toml is not copied here - simbox-configure generates it,
 # because the gateway base URL is only known once the .env is in place.
 # -----------------------------------------------------------------------------
 COPY wsl.conf /etc/wsl.conf
 COPY files/profile.d/devbox.sh /etc/profile.d/simbox.sh
-COPY files/bootstrap.sh /usr/local/bin/configure-simbox
-COPY files/update.sh /usr/local/bin/update-simbox
+COPY files/bootstrap.sh /usr/local/bin/simbox-configure
+COPY files/update.sh /usr/local/bin/simbox-update
 
 RUN chmod 0644 /etc/profile.d/simbox.sh \
-    && chmod 0755 /usr/local/bin/configure-simbox /usr/local/bin/update-simbox
+    && chmod 0755 /usr/local/bin/simbox-configure /usr/local/bin/simbox-update
 
 # -----------------------------------------------------------------------------
 # Acceptance tests in ~/tests, next to ~/projects.
 # -----------------------------------------------------------------------------
 COPY --chown=${USERNAME}:${USERNAME} files/tests /home/${USERNAME}/tests
 RUN chmod 0755 /home/${USERNAME}/tests/*.sh \
-    && ln -sf /home/${USERNAME}/tests/run-all.sh /usr/local/bin/test-simbox
+    && ln -sf /home/${USERNAME}/tests/run-all.sh /usr/local/bin/simbox-test
 
 # -----------------------------------------------------------------------------
 # Project checkouts under ~/projects - this is the layout the recorded
