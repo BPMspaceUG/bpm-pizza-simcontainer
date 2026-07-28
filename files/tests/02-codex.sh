@@ -32,6 +32,6 @@ if printf '%s' "$out" | grep -qi '404\|405\|not implemented'; then
          "Enable the Responses API on LiteLLM - Codex no longer supports chat."
 fi
 
-check_answer "$out" || fail "unexpected answer - expected 391 and Zagreb"
+check_answer "$out" || fail "the reply did not contain the token ${NONCE}"
 
 pass "/v1/responses works, model alias resolves"
