@@ -38,9 +38,9 @@ load_env() {
 require_gateway() {
     load_env
     [ -n "${LLM_PROXY_URL:-}" ] || fail "LLM_PROXY_URL is not set" \
-        "Run: sudo devbox-bootstrap --url <cdn-url>"
+        "Run: sudo simbox-configure"
     [ -n "${LLM_PROXY_KEY:-}" ] || fail "LLM_PROXY_KEY is not set" \
-        "Run: sudo devbox-bootstrap --url <cdn-url>"
+        "Run: sudo simbox-configure"
 }
 
 # Both single-agent tests ask the same question: a multiplication no cache or
