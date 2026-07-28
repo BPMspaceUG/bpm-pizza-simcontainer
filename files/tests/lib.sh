@@ -43,15 +43,21 @@ require_gateway() {
         "Run: sudo simbox-configure"
 }
 
-# Both single-agent tests ask the same question: a multiplication no cache or
-# error page can produce, plus a fact, so a wrong model is obvious too.
-QUESTION="Rechne 17*23 und nenne die Hauptstadt von Kroatien."
+# ---------------------------------------------------------------------------
+# The connectivity probe.
+#
+# A fresh random token per run. Only a model that actually generated a reply
+# can return it - no cache, no error page, no stale output can.
+#
+# Deliberately NOT an arithmetic question: that measures whether the model can
+# do maths, not whether the pipeline works. Kimi K2.5 gets 17*23 wrong, which
+# would have failed this test on a perfectly healthy gateway.
+# ---------------------------------------------------------------------------
+NONCE="PIZZA-$(tr -dc 'A-Z0-9' < /dev/urandom | head -c 10)"
+QUESTION="Antworte ausschliesslich mit dieser Zeichenkette, ohne jeden Zusatz: ${NONCE}"
 
 check_answer() {
-    local out="$1"
-    printf '%s' "$out" | grep -q '391' || return 1
-    printf '%s' "$out" | grep -qi 'zagreb' || return 1
-    return 0
+    printf '%s' "$1" | grep -qF "$NONCE"
 }
 
 list_models_hint() {
