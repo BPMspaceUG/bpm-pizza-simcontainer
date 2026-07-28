@@ -15,8 +15,9 @@
 #   LLM_PROXY_KEY   the participant-facing key; the real upstream key stays
 #                   on the gateway and is never handed out
 # Optional:
-#   ENV_SELF_URL    where this very file lives. Set it and the machines will
-#                   follow the file if it ever moves to a different URL.
+#   ENV_FILE        the URL this very file is served from. Set it and the
+#                   machines follow the file if it ever moves.
+#                   ENV_SELF_URL is accepted as an alias.
 #   CLAUDE_MODEL    model alias for Claude Code
 #   CODEX_MODEL     model alias for Codex CLI
 #   CODEX_WIRE_API  responses | chat              (default: responses)
@@ -31,7 +32,7 @@
 #   --file PATH        copy from a path inside the distro
 #   --url  URL         fetch from that URL (basic auth optional)
 #   <user:password>    fetch from the default endpoint with basic auth
-#   (nothing)          ENV_SELF_URL from the current .env, else the URL
+#   (nothing)          ENV_FILE from the current .env, else the URL
 #                      remembered from the last successful run
 #
 # Equivalent environment variables: DEVBOX_ENV_FILE, DEVBOX_ENV_URL,
@@ -95,20 +96,23 @@ if ! getent passwd "$TARGET_USER" >/dev/null; then
 fi
 
 HOME_DIR="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-ENV_FILE="${HOME_DIR}/.env"
-TMP_FILE="${ENV_FILE}.tmp"
+
+# NOTE: deliberately not called ENV_FILE. That name is a key inside the .env
+# itself, and sourcing the file would overwrite the path we are working with.
+ENV_PATH="${HOME_DIR}/.env"
+ENV_TMP="${ENV_PATH}.tmp"
 
 echo ">>> configuring for user ${TARGET_USER} (${HOME_DIR})"
 
 # ---------------------------------------------------------------------------
 # No source given: fall back to where the .env came from before.
-# ENV_SELF_URL inside the file wins, so moving the file to a new URL only has
+# The URL inside the file wins, so moving the file to a new location only has
 # to be announced once, in the old file.
 # ---------------------------------------------------------------------------
 if [ "$EXPLICIT_SOURCE" = "0" ]; then
     remembered=""
-    if [ -s "$ENV_FILE" ]; then
-        remembered=$(grep -m1 '^[[:space:]]*ENV_SELF_URL=' "$ENV_FILE" 2>/dev/null \
+    if [ -s "$ENV_PATH" ]; then
+        remembered=$(grep -m1 -E '^[[:space:]]*(ENV_FILE|ENV_SELF_URL)=' "$ENV_PATH" 2>/dev/null \
                      | cut -d= -f2- | tr -d '"'"'"' \r')
     fi
     if [ -z "$remembered" ] && [ -r "$STATE_FILE" ]; then
@@ -136,7 +140,7 @@ used_url=""
 
 if [ "$FROM_STDIN" = "1" ]; then
     echo ">>> reading .env from stdin"
-    if cat > "$TMP_FILE" && [ -s "$TMP_FILE" ]; then
+    if cat > "$ENV_TMP" && [ -s "$ENV_TMP" ]; then
         got_env=1
     else
         echo "!!! nothing arrived on stdin" >&2
@@ -144,7 +148,7 @@ if [ "$FROM_STDIN" = "1" ]; then
 
 elif [ -n "$ENV_SRC" ]; then
     echo ">>> copying .env from ${ENV_SRC}"
-    if cp "$ENV_SRC" "$TMP_FILE" 2>/dev/null && [ -s "$TMP_FILE" ]; then
+    if cp "$ENV_SRC" "$ENV_TMP" 2>/dev/null && [ -s "$ENV_TMP" ]; then
         got_env=1
     else
         echo "!!! could not read ${ENV_SRC}" >&2
@@ -156,16 +160,16 @@ elif [ -n "$ENV_URL" ] || [ -n "$BASICAUTH" ]; then
     echo ">>> fetching .env from ${ENV_URL}"
     if [ -n "$BASICAUTH" ]; then
         curl -fsSL --retry 2 --retry-delay 2 \
-             -u "$BASICAUTH" -o "$TMP_FILE" "$ENV_URL"
+             -u "$BASICAUTH" -o "$ENV_TMP" "$ENV_URL"
     else
         curl -fsSL --retry 2 --retry-delay 2 \
-             -o "$TMP_FILE" "$ENV_URL"
+             -o "$ENV_TMP" "$ENV_URL"
     fi
     rc=$?
 
     if [ $rc -ne 0 ]; then
         echo "!!! fetch failed (curl exit $rc) - endpoint down or wrong URL" >&2
-    elif [ ! -s "$TMP_FILE" ]; then
+    elif [ ! -s "$ENV_TMP" ]; then
         echo "!!! endpoint returned an empty body" >&2
     else
         got_env=1
@@ -177,39 +181,46 @@ else
     echo "    Provide one once with:  sudo devbox-bootstrap --url <url>"
 fi
 
-if [ "$got_env" = "1" ] && ! looks_like_env "$TMP_FILE"; then
+if [ "$got_env" = "1" ] && ! looks_like_env "$ENV_TMP"; then
     echo "!!! the response does not look like an .env file:" >&2
-    head -c 200 "$TMP_FILE" | sed 's/^/    /' >&2
+    head -c 200 "$ENV_TMP" | sed 's/^/    /' >&2
     echo "" >&2
     echo "!!! check the URL - a static host often answers 404 pages with status 200" >&2
     got_env=0
 fi
 
+remember_source() {
+    [ -n "$1" ] || return 0
+    [ "$(id -u)" -eq 0 ] || return 0
+    mkdir -p "$STATE_DIR" 2>/dev/null \
+        && printf '%s\n' "$1" > "$STATE_FILE" 2>/dev/null \
+        && chmod 0644 "$STATE_FILE" 2>/dev/null
+}
+
 if [ "$got_env" = "1" ]; then
-    mv "$TMP_FILE" "$ENV_FILE"
-    echo ">>> .env written to ${ENV_FILE} ($(grep -c '=' "$ENV_FILE") entries)"
-    # Remember the URL so a later bare run can refresh without arguments.
-    if [ -n "$used_url" ] && [ "$(id -u)" -eq 0 ]; then
-        mkdir -p "$STATE_DIR" 2>/dev/null \
-            && printf '%s\n' "$used_url" > "$STATE_FILE" 2>/dev/null \
-            && chmod 0644 "$STATE_FILE" 2>/dev/null
-    fi
+    mv "$ENV_TMP" "$ENV_PATH"
+    echo ">>> .env written to ${ENV_PATH} ($(grep -c '=' "$ENV_PATH") entries)"
+    remember_source "$used_url"
 else
-    rm -f "$TMP_FILE"
-    [ -f "$ENV_FILE" ] || : > "$ENV_FILE"
-    echo "!!! continuing with an empty ${ENV_FILE}" >&2
+    rm -f "$ENV_TMP"
+    [ -f "$ENV_PATH" ] || : > "$ENV_PATH"
+    echo "!!! continuing with an empty ${ENV_PATH}" >&2
 fi
 
-chown "$TARGET_USER:$TARGET_USER" "$ENV_FILE"
-chmod 600 "$ENV_FILE"
+chown "$TARGET_USER:$TARGET_USER" "$ENV_PATH"
+chmod 600 "$ENV_PATH"
 
 # ---------------------------------------------------------------------------
 # Read the gateway settings out of the .env
 # ---------------------------------------------------------------------------
 set -a
 # shellcheck disable=SC1090
-. "$ENV_FILE" 2>/dev/null || true
+. "$ENV_PATH" 2>/dev/null || true
 set +a
+
+# If the file names its own location, that becomes the new remembered source.
+SELF_URL="${ENV_FILE:-${ENV_SELF_URL:-}}"
+remember_source "$SELF_URL"
 
 # OPENROUTER_* is accepted as a fallback for setups without the gateway.
 PROXY_URL="${LLM_PROXY_URL:-}"
@@ -228,13 +239,6 @@ CODEX_MODEL_NAME="${CODEX_MODEL:-$DEFAULT_CODEX_MODEL}"
 # retired, so "responses" is the only workable default.
 CODEX_WIRE="${CODEX_WIRE_API:-responses}"
 CLAUDE_THEME_NAME="${CLAUDE_THEME:-dark}"
-
-# If the file names its own location, that becomes the new remembered source.
-if [ -n "${ENV_SELF_URL:-}" ] && [ "$(id -u)" -eq 0 ]; then
-    mkdir -p "$STATE_DIR" 2>/dev/null \
-        && printf '%s\n' "$ENV_SELF_URL" > "$STATE_FILE" 2>/dev/null \
-        && chmod 0644 "$STATE_FILE" 2>/dev/null
-fi
 
 # ---------------------------------------------------------------------------
 # Claude Code -> gateway (Anthropic-compatible /v1/messages)
@@ -299,9 +303,10 @@ if [ -n "$PROXY_KEY" ] && [ -n "$PROXY_URL" ]; then
     echo "    gateway : ${PROXY_URL}"
     echo "    claude  -> ${CLAUDE_MODEL_NAME}"
     echo "    codex   -> ${CODEX_MODEL_NAME} (${CODEX_WIRE})"
+    [ -n "$SELF_URL" ] && echo "    source  : ${SELF_URL}"
     exit 0
 else
-    echo "    NOTE: LLM_PROXY_URL / LLM_PROXY_KEY missing in ${ENV_FILE}."
+    echo "    NOTE: LLM_PROXY_URL / LLM_PROXY_KEY missing in ${ENV_PATH}."
     echo "    The agents will not authenticate. Retry with a valid .env."
     exit 3
 fi
