@@ -15,8 +15,16 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # -----------------------------------------------------------------------------
 # Base packages
+#
 # bubblewrap is what Codex uses for sandboxing; without it Codex warns on every
 # start. xxd is used by the audio test to check the mp3 header.
+#
+# debian:trixie-slim omits the process and network tooling a developer expects,
+# so agents that inspect a running system come up empty-handed:
+#   procps    ps, top, free, kill
+#   psmisc    killall, pstree, fuser
+#   iproute2  ip, ss
+#   lsof      open files and listening sockets
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -33,6 +41,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nano \
         ripgrep \
         bubblewrap \
+        procps \
+        psmisc \
+        iproute2 \
+        lsof \
         build-essential \
         python3 \
         python3-venv \
@@ -42,6 +54,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN sed -i 's/^# *\(en_US.UTF-8\)/\1/' /etc/locale.gen && locale-gen
+
+# Fail the build if any of the tools an exercise might reach for is missing.
+RUN for c in ps top free kill killall pstree fuser ip ss lsof \
+             git curl wget jq xxd zip unzip rg nano less; do \
+        command -v "$c" >/dev/null || { echo "missing: $c" >&2; exit 1; }; \
+    done
 
 # -----------------------------------------------------------------------------
 # Node.js (required by both Claude Code and Codex CLI)
@@ -95,7 +113,10 @@ RUN chmod 0755 /home/${USERNAME}/tests/*.sh \
 RUN test -x /usr/local/bin/simbox-configure \
     && test -x /usr/local/bin/simbox-update \
     && test -x /home/${USERNAME}/tests/run-all.sh \
-    && test -f /etc/profile.d/simbox.sh
+    && test -f /etc/profile.d/simbox.sh \
+    && bash -n /usr/local/bin/simbox-configure \
+    && bash -n /usr/local/bin/simbox-update \
+    && bash -n /home/${USERNAME}/tests/run-all.sh
 
 # -----------------------------------------------------------------------------
 # Project checkouts under ~/projects - this is the layout the recorded
