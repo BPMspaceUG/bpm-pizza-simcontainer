@@ -23,6 +23,7 @@ for d in data test_images; do
     [ -d "$REPO/$d" ] && [ -n "$(ls -A "$REPO/$d" 2>/dev/null)" ] \
         || fail "$REPO/$d is missing or empty" \
                "The image is broken - re-import it."
+    printf '  required: bpm-pizza-ml/%s\n' "$d"
 done
 printf '  data    : %s\n' "$(ls -1 "$REPO/data" 2>/dev/null | tr '\n' ' ')"
 [ -d "$HOME/projects/bpm-pizza-vibecoding/.git" ] \
@@ -32,13 +33,17 @@ printf '  data    : %s\n' "$(ls -1 "$REPO/data" 2>/dev/null | tr '\n' ' ')"
 # Presence, not count: the exercise repo owns its skill set and may add more.
 # The names are printed so a trainer can eyeball them; only "at least one"
 # is a pass condition.
+#
+# NUL-delimited throughout: a skill directory containing a space must count as
+# one skill, not two.
 SKILLDIR="$HOME/projects/bpm-pizza-vibecoding/.claude/skills"
-mapfile -t SKILLS < <(find "$SKILLDIR" -mindepth 2 -maxdepth 2 -name SKILL.md \
-                      -printf '%h\n' 2>/dev/null | xargs -r -n1 basename | sort)
-[ ${#SKILLS[@]} -gt 0 ] || fail "no skills in $SKILLDIR" \
+printf '  required: bpm-pizza-vibecoding/.claude/skills\n'
+mapfile -d '' -t SKILLPATHS < <(find "$SKILLDIR" -mindepth 2 -maxdepth 2 \
+                                -name SKILL.md -printf '%h\0' 2>/dev/null | sort -z)
+[ ${#SKILLPATHS[@]} -gt 0 ] || fail "no skills in $SKILLDIR" \
     "The checkout predates the skills or the image is broken - re-import it."
-for s in "${SKILLS[@]}"; do
-    printf '  skill   : %s\n' "$s"
+for s in "${SKILLPATHS[@]}"; do
+    printf '  skill   : %s\n' "$(basename "$s")"
 done
 
 # --- the environment the exercises rely on ----------------------------------

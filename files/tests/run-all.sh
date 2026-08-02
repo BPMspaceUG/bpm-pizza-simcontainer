@@ -6,7 +6,7 @@
 # importing the image, before the training starts.
 #
 #   simbox-test          run everything
-#   simbox-test 01 04    run only the tests whose number matches
+#   simbox-test 01 05    run only the tests whose number matches
 #   simbox-test --list   show what exists
 #
 # Exit code 0 means the machine is ready.
