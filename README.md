@@ -104,7 +104,7 @@ Prerequisite on the target machine: WSL (`wsl --install`).
 |---|---|
 | `-EnvUrl <url>` | Full URL of the `.env`, **including the filename**. Works with or without credentials. |
 | `-EnvFile <path>` | Full path to a local `.env` on Windows, including the filename. No network request. |
-| `user:password` | Basic auth against the default endpoint (`https://www.aipizzasim.com/getenv`) |
+| `user:password` | Optional basic-auth credentials for `-EnvUrl`. Not a source on its own — there is no default endpoint. |
 | `-NoEnv` | Skip the `.env` entirely — the distro comes up with an empty one |
 | `-Name <name>` | Distro name, default `pizza-sim`. Taken names get a numeric suffix. |
 | `-SetDefault` | Make this the WSL default, so a bare `wsl` opens it |

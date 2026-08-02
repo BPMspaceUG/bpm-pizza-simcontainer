@@ -31,9 +31,12 @@
 #   --stdin            read from standard input
 #   --file PATH        copy from a path inside the distro
 #   --url  URL         fetch from that URL (basic auth optional)
-#   <user:password>    fetch from the default endpoint with basic auth
 #   (nothing)          ENV_SELF_URL from the current .env, else the URL
 #                      remembered from the last successful run
+#
+# There is NO built-in default URL. A <user:password> argument only supplies
+# credentials for --url; on its own it has nothing to fetch from. A fresh
+# provisioning link comes from /trainer on the PizzaSim instance.
 #
 # Equivalent environment variables: SIMBOX_ENV_FILE, SIMBOX_ENV_URL,
 # SIMBOX_BASICAUTH. The target account can be set with SIMBOX_USER or --user.
@@ -43,7 +46,6 @@
 # =============================================================================
 set -uo pipefail
 
-DEFAULT_ENV_URL="https://www.aipizzasim.com/getenv"
 DEFAULT_USER="roberto"
 STATE_DIR="/etc/simbox"
 STATE_FILE="${STATE_DIR}/env-source"
@@ -61,7 +63,10 @@ FROM_STDIN=0
 EXPLICIT_SOURCE=0
 
 usage() {
-    sed -n '3,41p' "$0" | sed 's/^# \?//'
+    # The whole header block, delimited by its own rule line rather than by a
+    # line range: a hardcoded range silently truncates the help the next time
+    # the header grows or shrinks, which is how it lost its last line before.
+    awk 'NR < 3 { next } /^# ={10,}/ { exit } { sub(/^# ?/, ""); print }' "$0"
 }
 
 while [ $# -gt 0 ]; do
@@ -154,9 +159,7 @@ elif [ -n "$ENV_SRC" ]; then
         echo "!!! could not read ${ENV_SRC}" >&2
     fi
 
-elif [ -n "$ENV_URL" ] || [ -n "$BASICAUTH" ]; then
-    [ -n "$ENV_URL" ] || ENV_URL="$DEFAULT_ENV_URL"
-
+elif [ -n "$ENV_URL" ]; then
     echo ">>> fetching .env from ${ENV_URL}"
     if [ -n "$BASICAUTH" ]; then
         curl -fsSL --retry 2 --retry-delay 2 \
@@ -176,9 +179,17 @@ elif [ -n "$ENV_URL" ] || [ -n "$BASICAUTH" ]; then
         used_url="$ENV_URL"
     fi
 
+elif [ -n "$BASICAUTH" ]; then
+    # Credentials are not a source. Until 2026-08-02 this case fetched a
+    # built-in default URL that PizzaSim has never routed, so the run died on
+    # an HTML 404 body instead of saying what was missing.
+    echo "!!! credentials given but no URL, and there is no default endpoint" >&2
+    echo "    Pass the link too:  sudo simbox-configure --url <url> <user:password>" >&2
+
 else
     echo ">>> no .env source given and none remembered - skipping"
     echo "    Provide one once with:  sudo simbox-configure --url <url>"
+    echo "    A fresh provisioning link comes from /trainer on the PizzaSim instance."
 fi
 
 if [ "$got_env" = "1" ] && ! looks_like_env "$ENV_TMP"; then

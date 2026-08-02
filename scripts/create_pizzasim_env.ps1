@@ -9,19 +9,19 @@
 
     Designed to be run straight from the network without installing anything:
 
-        & ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_pizzasim_env.ps1))) user:password
+        & ([scriptblock]::Create((irm https://raw.githubusercontent.com/BPMspaceUG/bpm-pizza-simcontainer/main/scripts/create_pizzasim_env.ps1))) -EnvUrl <link from /trainer>
 
     No #Requires statement here - it is not allowed inside a scriptblock.
 
 .PARAMETER BasicAuth
-    Credentials for the .env endpoint in "user:password" form. Only needed if
-    the endpoint is protected. If neither this nor -EnvUrl / -EnvFile / -NoEnv
-    is given, the script asks once; press Enter to skip.
+    Optional credentials for -EnvUrl, in "user:password" form. Only needed if
+    that URL is protected. It is NOT a source on its own: there is no default
+    endpoint, so credentials without -EnvUrl have nothing to fetch from.
 
 .PARAMETER EnvUrl
     Full URL to fetch the .env from, including the filename if the host serves
-    static files. Replaces the default endpoint
-    (https://www.aipizzasim.com/getenv). Works with or without -BasicAuth.
+    static files. Works with or without -BasicAuth. A fresh provisioning link
+    comes from /trainer on the PizzaSim instance.
 
 .PARAMETER EnvFile
     Full path to a local .env on the Windows side, including the filename. Its
@@ -43,9 +43,6 @@
 
 .PARAMETER FreshDownload
     Ignore and delete any cached rootfs before downloading.
-
-.EXAMPLE
-    create_pizzasim_env user:password -SetDefault
 
 .EXAMPLE
     create_pizzasim_env -EnvUrl https://example.com/path/pizza.env -SetDefault
@@ -110,7 +107,7 @@ if ($EnvFile -and -not (Test-Path $EnvFile)) {
 }
 
 # --- where does the .env come from? ------------------------------------------
-# Precedence matches simbox-configure: file, then url, then default endpoint.
+# Precedence matches simbox-configure: file, then url. Neither has a default.
 $envMode = "none"
 
 if ($NoEnv) {
@@ -126,14 +123,11 @@ elseif ($EnvUrl) {
     $envMode = "url"
     Write-Step "fetching .env from $EnvUrl"
 }
-else {
-    if (-not $BasicAuth) {
-        $BasicAuth = Read-Host "Credentials for the .env endpoint (user:password, empty to skip)"
-    }
-    if ($BasicAuth) {
-        $envMode = "url"
-        Write-Step "fetching .env from the default endpoint"
-    }
+elseif ($BasicAuth) {
+    # Credentials alone used to mean "fetch from the default endpoint", and
+    # that endpoint has never been routed by PizzaSim. Failing here names what
+    # is missing instead of letting the distro come up on a 404 body.
+    throw "-BasicAuth only supplies credentials for -EnvUrl; there is no default endpoint. Pass -EnvUrl <link from /trainer>, -EnvFile <path>, or -NoEnv."
 }
 
 if ($BasicAuth -and $BasicAuth -notmatch '^[^:]+:.+$') {
