@@ -256,8 +256,7 @@ a time.
 | `01-claude` | Claude Code — `/v1/messages` and the model alias |
 | `02-codex` | Codex — `/v1/responses` and the model alias |
 | `03-agents-chained` | Claude's Bash tool and agent-to-agent invocation |
-| `04-audio-roundtrip` | text-to-speech and speech-to-text in both directions |
-| `05-exercise-env` | PyTorch, datasets and both repos in place |
+| `05-exercise-env` | PyTorch, datasets, both repos and the vibecoding skills |
 
 ```bash
 simbox-test          # all
@@ -268,9 +267,9 @@ simbox-test 03       # only the chained agent test
 If `00-preconditions` fails the runner stops — nothing else can pass without
 the gateway. Every failure names the likely cause and the next step.
 
-The audio test generates its own mp3 through the gateway and transcribes it
-back, so no audio fixture ships in the image. It checks file size and mp3 magic
-bytes before transcribing, otherwise a JSON error page would pass as audio.
+`simbox-test` is the only preparation check. If it passes, the machine is
+ready; there is nothing to run alongside it. Speech is server-side
+infrastructure and is monitored there, so no audio test ships here.
 
 ---
 

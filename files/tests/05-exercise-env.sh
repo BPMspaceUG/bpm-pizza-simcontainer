@@ -14,8 +14,32 @@ PINNED_FILE="/etc/simbox/pinned-refs"
 [ -d "$REPO/.git" ] || fail "$REPO is missing" \
     "The image is broken - re-import it."
 [ -x "$REPO/.venv/bin/python" ] || fail "no venv in $REPO"
+
+# --- the data the exercises train on ----------------------------------------
+# Existence and non-empty only. The dataset versions under data/ belong to the
+# exercise repo and will churn; asserting deep paths would break this image on
+# a legitimate data/v3 (#3).
+for d in data test_images; do
+    [ -d "$REPO/$d" ] && [ -n "$(ls -A "$REPO/$d" 2>/dev/null)" ] \
+        || fail "$REPO/$d is missing or empty" \
+               "The image is broken - re-import it."
+done
+printf '  data    : %s\n' "$(ls -1 "$REPO/data" 2>/dev/null | tr '\n' ' ')"
 [ -d "$HOME/projects/bpm-pizza-vibecoding/.git" ] \
     || fail "bpm-pizza-vibecoding is missing"
+
+# --- the skills block exercise 4 relies on ----------------------------------
+# Presence, not count: the exercise repo owns its skill set and may add more.
+# The names are printed so a trainer can eyeball them; only "at least one"
+# is a pass condition.
+SKILLDIR="$HOME/projects/bpm-pizza-vibecoding/.claude/skills"
+mapfile -t SKILLS < <(find "$SKILLDIR" -mindepth 2 -maxdepth 2 -name SKILL.md \
+                      -printf '%h\n' 2>/dev/null | xargs -r -n1 basename | sort)
+[ ${#SKILLS[@]} -gt 0 ] || fail "no skills in $SKILLDIR" \
+    "The checkout predates the skills or the image is broken - re-import it."
+for s in "${SKILLS[@]}"; do
+    printf '  skill   : %s\n' "$s"
+done
 
 # --- the environment the exercises rely on ----------------------------------
 out=$(cd "$REPO" && ./.venv/bin/python check_environment.py 2>&1)
@@ -55,4 +79,4 @@ else
     note "no ${PINNED_FILE} - image predates release pinning"
 fi
 
-pass "torch, data and both repos are in place"
+pass "torch, data, both repos and the vibecoding skills are in place"

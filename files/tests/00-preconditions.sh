@@ -6,6 +6,11 @@ cd "$(dirname "$0")" && . ./lib.sh
 TEST_NAME="00-preconditions"
 header "gateway settings and .env"
 
+# The .env itself, before anything that depends on it: a missing file must name
+# itself, not surface later as an unset variable (#3).
+[ -s "$HOME/.env" ] || fail "no ~/.env - this machine was never configured" \
+    "Run: sudo simbox-configure"
+
 require_gateway
 
 entries=$(grep -c '=' "$HOME/.env" 2>/dev/null || echo 0)

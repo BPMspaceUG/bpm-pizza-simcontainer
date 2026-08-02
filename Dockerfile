@@ -23,7 +23,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Base packages
 #
 # bubblewrap is what Codex uses for sandboxing; without it Codex warns on every
-# start. xxd is used by the audio test to check the mp3 header.
+# start. xxd came in for the audio test that #3 removed; it stays as general
+# developer tooling, not because a test needs it.
 #
 # debian:trixie-slim omits the process and network tooling a developer expects,
 # so agents that inspect a running system come up empty-handed:
@@ -151,9 +152,14 @@ RUN mkdir -p projects .codex .claude \
          https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git projects/bpm-pizza-vibecoding
 
 # Verify both checkouts landed AND really sit on the requested tag.
+#
+# The skills block is asserted by presence, never by count: the exercise repo
+# owns its skill set and may grow a fourth. A release that drops it entirely
+# must break the build here rather than surface mid-exercise (#5).
 RUN test -d projects/bpm-pizza-ml/.git \
     && test -d projects/bpm-pizza-vibecoding/.git \
     && test -f projects/bpm-pizza-ml/check_environment.py \
+    && [ -n "$(ls -1 projects/bpm-pizza-vibecoding/.claude/skills/*/SKILL.md 2>/dev/null)" ] \
     && [ "$(git -C projects/bpm-pizza-ml describe --tags --exact-match 2>/dev/null)" = "${ML_REF}" ] \
     && [ "$(git -C projects/bpm-pizza-vibecoding describe --tags --exact-match 2>/dev/null)" = "${VIBE_REF}" ]
 
