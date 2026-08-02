@@ -2,26 +2,34 @@
 # =============================================================================
 # simbox-update
 #
-# The first command a trainer runs on a freshly reset lab machine. In order:
+# NOT part of the normal setup. After importing the image the machine is
+# already in the state the exercises were tested and recorded against - run
+# simbox-test and you are done.
 #
+# This command exists for the case where a trainer knowingly wants to leave
+# that state: a bugfix that has not been released yet, a security update, an
+# agent version with a fix they need. It is a decision, not a routine.
+#
+# Steps:
 #   0. refresh ~/.env from the CDN
 #   1. Debian packages
 #   2. Claude Code
 #   3. Codex CLI
-#   4. git pull in ~/projects/*
-#   5. the acceptance tests in ~/tests
+#   4. the acceptance tests
+#
+# The exercise repos are NOT touched. They are pinned to the release tags the
+# image was built from; moving them needs --repos-latest and says so loudly.
 #
 # Usage:
-#   simbox-update             all steps
-#   simbox-update --check     report what is outdated, change nothing
-#   simbox-update --no-test   steps 0-4 only
-#   simbox-update --env       only refresh the .env
-#   simbox-update --agents    only claude + codex
-#   simbox-update --system    only apt
-#   simbox-update --repos     only git pull
-#   simbox-update --test      only the acceptance tests
+#   simbox-update               steps 0-4
+#   simbox-update --check       report what is outdated, change nothing
+#   simbox-update --env         only refresh the .env
+#   simbox-update --agents      only claude + codex
+#   simbox-update --system      only apt
+#   simbox-update --test        only the acceptance tests
+#   simbox-update --repos-latest   move both repos off their pinned tag
 #
-# Exit code 0 means the machine is updated and every test passed.
+# Exit code 0 means everything applied and every test passed.
 # =============================================================================
 set -uo pipefail
 
@@ -29,26 +37,37 @@ MODE="all"
 RUN_TEST=1
 
 case "${1:-}" in
-    --check)   MODE="check" ;;
-    --env)     MODE="env";     RUN_TEST=0 ;;
-    --agents)  MODE="agents";  RUN_TEST=0 ;;
-    --system)  MODE="system";  RUN_TEST=0 ;;
-    --repos)   MODE="repos";   RUN_TEST=0 ;;
-    --test)    MODE="test" ;;
-    --no-test) MODE="all";     RUN_TEST=0 ;;
-    -h|--help) sed -n '3,26p' "$0" | sed 's/^# \?//'; exit 0 ;;
-    "")        MODE="all" ;;
-    *)         echo "unknown option: $1" >&2; exit 2 ;;
+    --check)        MODE="check" ;;
+    --env)          MODE="env";     RUN_TEST=0 ;;
+    --agents)       MODE="agents";  RUN_TEST=0 ;;
+    --system)       MODE="system";  RUN_TEST=0 ;;
+    --repos-latest) MODE="repos";   RUN_TEST=0 ;;
+    --test)         MODE="test" ;;
+    --no-test)      MODE="all";     RUN_TEST=0 ;;
+    -h|--help) sed -n '3,33p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    "")             MODE="all" ;;
+    *)              echo "unknown option: $1" >&2; exit 2 ;;
 esac
 
 PROJECTS="${HOME}/projects"
 TESTS="${HOME}/tests"
 STATE_FILE="/etc/simbox/env-source"
+PINNED_FILE="/etc/simbox/pinned-refs"
 
-BOLD=$'\033[1m'; GREEN=$'\033[32m'; RED=$'\033[31m'; OFF=$'\033[0m'
+BOLD=$'\033[1m'; GREEN=$'\033[32m'; RED=$'\033[31m'; YELLOW=$'\033[33m'; OFF=$'\033[0m'
 
 hr()   { printf '%s\n' "----------------------------------------------------------"; }
 step() { printf '\n%s\n' "${BOLD}$1${OFF}"; hr; }
+
+pinned_ref() {   # pinned_ref <repo-name>
+    [ -r "$PINNED_FILE" ] || return 1
+    grep -m1 "^$1=" "$PINNED_FILE" 2>/dev/null | cut -d= -f2-
+}
+
+current_ref() {  # current_ref <path>
+    git -C "$1" describe --tags --exact-match 2>/dev/null \
+        || git -C "$1" rev-parse --short HEAD 2>/dev/null
+}
 
 show_versions() {
     step "installed"
@@ -66,8 +85,6 @@ show_versions() {
 # --- 0. environment file ----------------------------------------------------
 do_env() {
     step "0. refreshing .env"
-    # A bare simbox-configure re-fetches from ENV_SELF_URL in the current file,
-    # or from the URL remembered at install time.
     if sudo simbox-configure; then
         return 0
     fi
@@ -116,18 +133,22 @@ check_agents() {
     fi
 }
 
+# Reports only. Whether to leave a pinned tag is a trainer decision.
 check_repos() {
-    step "4. project repos"
-    local d name behind
+    step "exercise repos (pinned, not updated)"
+    local d name pin cur latest
     for d in "$PROJECTS"/*/; do
         [ -d "${d}.git" ] || continue
         name=$(basename "$d")
-        git -C "$d" fetch --quiet 2>/dev/null
-        behind=$(git -C "$d" rev-list --count HEAD..@{u} 2>/dev/null || echo 0)
-        if [ "$behind" = "0" ]; then
-            printf '  %-24s up to date\n' "$name"
-        else
-            printf '  %-24s %s commit(s) behind\n' "$name" "$behind"
+        pin=$(pinned_ref "$name" || echo "?")
+        cur=$(current_ref "$d")
+        printf '  %-24s at %s (image pinned to %s)\n' "$name" "${cur:-?}" "$pin"
+
+        git -C "$d" fetch --tags --quiet 2>/dev/null
+        latest=$(git -C "$d" tag --sort=-v:refname 2>/dev/null | head -n1)
+        if [ -n "$latest" ] && [ "$latest" != "$cur" ]; then
+            printf '    %s newer release available: %s\n' "${YELLOW}note${OFF}" "$latest"
+            printf '    a new image should be built from it, rather than moving this machine\n'
         fi
     done
 }
@@ -147,22 +168,26 @@ do_agents() {
     sudo npm cache clean --force >/dev/null 2>&1
 }
 
-do_repos() {
-    step "4. updating project repos"
-    local d name
+do_repos_latest() {
+    step "moving the exercise repos off their pinned tag"
+    printf '%s This leaves the state the exercises were recorded against.\n' "${YELLOW}WARNING${OFF}"
+    printf '        Videos and instructions may no longer match what participants see.\n\n'
+    local d name branch
     for d in "$PROJECTS"/*/; do
         [ -d "${d}.git" ] || continue
         name=$(basename "$d")
         printf '  %s\n' "$name"
-        # Shallow clones, so keep the fetch shallow as well.
-        if ! git -C "$d" pull --ff-only --depth 1 2>&1 | sed 's/^/    /'; then
-            printf '    %s\n' "not fast-forwardable - local changes? leaving it alone"
-        fi
+        branch=$(git -C "$d" remote show origin 2>/dev/null \
+                 | sed -n 's/.*HEAD branch: //p')
+        branch="${branch:-main}"
+        git -C "$d" fetch --depth 1 origin "$branch" 2>&1 | sed 's/^/    /'
+        git -C "$d" checkout -B "$branch" FETCH_HEAD 2>&1 | sed 's/^/    /'
     done
+    printf '\n  Undo by re-importing the image.\n'
 }
 
 do_test() {
-    step "5. acceptance tests"
+    step "4. acceptance tests"
     if [ ! -x "${TESTS}/run-all.sh" ]; then
         printf '  %s\n' "no tests in ${TESTS} - image predates them, re-import to get them"
         return 0
@@ -180,23 +205,24 @@ case "$MODE" in
         check_system
         check_agents
         check_repos
-        printf '\n%s\n' "Apply everything with:  simbox-update"
+        printf '\n%s\n' "Apply steps 0-4 with:  simbox-update"
         ;;
     env)    do_env || rc=$? ;;
     system) do_system; show_versions ;;
     agents) do_agents; show_versions ;;
-    repos)  do_repos ;;
+    repos)  do_repos_latest ;;
     test)   do_test || rc=$? ;;
     all)
-        # A stale .env would make the tests fail for the wrong reason, so this
-        # goes first. A failure here is not fatal - the rest still runs.
+        printf '%s simbox-update leaves the tested state of this image.\n' "${YELLOW}NOTE${OFF}"
+        printf '     If the machine was just imported you do not need it - run simbox-test.\n'
+        # A stale .env would make the tests fail for the wrong reason.
         do_env || rc=$?
         do_system
         do_agents
-        do_repos
         show_versions
-        printf '\n%s\n' "Note: the PyTorch venv is left untouched on purpose - the"
-        printf '%s\n'   "exercises are pinned to the version baked into the image."
+        check_repos
+        printf '\n%s\n' "The PyTorch venv is left untouched on purpose - the exercises are"
+        printf '%s\n'   "pinned to the version baked into the image."
         if [ "$RUN_TEST" = "1" ]; then
             do_test || rc=$?
         fi
@@ -207,10 +233,10 @@ if [ "$MODE" = "all" ] && [ "$RUN_TEST" = "1" ]; then
     printf '\n'
     hr
     if [ "$rc" -eq 0 ]; then
-        printf '%s the machine is updated and ready for the training.\n' "${GREEN}READY${OFF}"
+        printf '%s updates applied, all tests passed.\n' "${GREEN}READY${OFF}"
     else
         printf '%s something did not pass. Check the output above.\n' "${RED}NOT READY${OFF}"
-        printf '      Rerun a single test from %s for detail.\n' "$TESTS"
+        printf '      Re-importing the image restores the tested state.\n'
     fi
 fi
 
