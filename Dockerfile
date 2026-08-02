@@ -11,6 +11,12 @@ FROM debian:trixie-slim
 ARG USERNAME=roberto
 ARG NODE_MAJOR=22
 
+# Exercise content is pinned to release tags, not to a moving branch: the
+# exercise videos are recorded against these. Bump them here when a new
+# release is cut - that is a deliberate decision, never a side effect.
+ARG ML_REF=v1.0.0
+ARG VIBE_REF=v1.0.0
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # -----------------------------------------------------------------------------
@@ -87,9 +93,9 @@ RUN useradd -m -s /bin/bash -G sudo ${USERNAME} \
 
 # -----------------------------------------------------------------------------
 # System files and the three simbox commands:
-#   simbox-update      .env, apt, agents, repos, then the tests
+#   simbox-test        the acceptance tests - the normal step after an import
 #   simbox-configure   fetch the .env and rewrite the agent configs
-#   simbox-test        the acceptance tests
+#   simbox-update      deliberately leave the tested state, trainer decision
 #
 # ~/.codex/config.toml is not copied here - simbox-configure generates it,
 # because the gateway base URL is only known once the .env is in place.
@@ -101,6 +107,13 @@ COPY files/update.sh /usr/local/bin/simbox-update
 
 RUN chmod 0644 /etc/profile.d/simbox.sh \
     && chmod 0755 /usr/local/bin/simbox-configure /usr/local/bin/simbox-update
+
+# Record what this image was pinned to, so the tests and simbox-update can
+# tell whether a checkout still matches the state the videos were made against.
+RUN mkdir -p /etc/simbox \
+    && printf 'bpm-pizza-ml=%s\nbpm-pizza-vibecoding=%s\n' "${ML_REF}" "${VIBE_REF}" \
+       > /etc/simbox/pinned-refs \
+    && chmod 0644 /etc/simbox/pinned-refs
 
 # -----------------------------------------------------------------------------
 # Acceptance tests in ~/tests, next to ~/projects.
@@ -114,16 +127,16 @@ RUN test -x /usr/local/bin/simbox-configure \
     && test -x /usr/local/bin/simbox-update \
     && test -x /home/${USERNAME}/tests/run-all.sh \
     && test -f /etc/profile.d/simbox.sh \
+    && test -f /etc/simbox/pinned-refs \
     && bash -n /usr/local/bin/simbox-configure \
     && bash -n /usr/local/bin/simbox-update \
     && bash -n /home/${USERNAME}/tests/run-all.sh
 
 # -----------------------------------------------------------------------------
-# Project checkouts under ~/projects - this is the layout the recorded
-# exercise videos show, so it stays.
+# Project checkouts under ~/projects, pinned to the release tags above.
 #
-# No error suppression here: if a clone fails there is no point in producing
-# an image at all.
+# No error suppression here: if a clone fails, or a tag does not exist, there
+# is no point in producing an image at all.
 #
 # Shallow on purpose: the datasets make full history expensive, and the rootfs
 # has to stay under the 2 GB release asset limit.
@@ -132,13 +145,17 @@ USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 
 RUN mkdir -p projects .codex .claude \
-    && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-ml.git         projects/bpm-pizza-ml \
-    && git clone --depth 1 https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git projects/bpm-pizza-vibecoding
+    && git clone --depth 1 --branch "${ML_REF}" \
+         https://github.com/BPMspaceUG/bpm-pizza-ml.git         projects/bpm-pizza-ml \
+    && git clone --depth 1 --branch "${VIBE_REF}" \
+         https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git projects/bpm-pizza-vibecoding
 
-# Verify both checkouts really landed before anything else depends on them.
+# Verify both checkouts landed AND really sit on the requested tag.
 RUN test -d projects/bpm-pizza-ml/.git \
     && test -d projects/bpm-pizza-vibecoding/.git \
-    && test -f projects/bpm-pizza-ml/check_environment.py
+    && test -f projects/bpm-pizza-ml/check_environment.py \
+    && [ "$(git -C projects/bpm-pizza-ml describe --tags --exact-match 2>/dev/null)" = "${ML_REF}" ] \
+    && [ "$(git -C projects/bpm-pizza-vibecoding describe --tags --exact-match 2>/dev/null)" = "${VIBE_REF}" ]
 
 # Only the chmod may fail harmlessly - a repo without .sh files is fine.
 RUN chmod +x projects/bpm-pizza-ml/*.sh 2>/dev/null || true
