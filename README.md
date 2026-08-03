@@ -257,6 +257,7 @@ a time.
 | `02-codex` | Codex — `/v1/responses` and the model alias |
 | `03-agents-chained` | Claude's Bash tool and agent-to-agent invocation |
 | `05-exercise-env` | PyTorch, datasets, both repos and the vibecoding skills |
+04 is retired, not missing — audio moved server-side (#3); 05 kept its number so docs and `simbox-test 05` wouldn't churn for no gain.
 
 ```bash
 simbox-test          # all
