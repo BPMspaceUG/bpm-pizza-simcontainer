@@ -1,0 +1,17 @@
+# One gateway key serves the whole training fleet, so a committed credential
+# file is a fleet-wide rotation mid-course, not a local reset. Every line below
+# stands on its own — do not delete one without reading its reason.
+
+# simbox-configure writes the live credentials here (files/bootstrap.sh:107)
+.env
+# .env.local / .env.bak, and the .env.tmp simbox-configure writes (bootstrap.sh:108)
+.env.*
+# any other name a maintainer picks: pizza.env, trainer.env (README:167, ps1:48)
+*.env
+# `docker export ... -o rootfs.tar` lands in the repo root (README "Build locally")
+*.tar
+# the ~900 MB release asset, rebuilt every time (build.yml:32 ASSET, README:44)
+*.tar.gz
+# The agent-team harness creates its working copies here, inside the repo
+# root, not outside it.
+.claude/worktrees/
