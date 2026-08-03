@@ -14,7 +14,7 @@ ARG NODE_MAJOR=22
 # Exercise content is pinned to release tags, not to a moving branch: the
 # exercise videos are recorded against these. Bump them here when a new
 # release is cut - that is a deliberate decision, never a side effect.
-ARG ML_REF=v1.0.0
+ARG ML_REF=v1.0.1
 ARG VIBE_REF=v1.0.0
 
 ENV DEBIAN_FRONTEND=noninteractive
