@@ -110,6 +110,13 @@ COPY files/update.sh /usr/local/bin/simbox-update
 RUN chmod 0644 /etc/profile.d/simbox.sh \
     && chmod 0755 /usr/local/bin/simbox-configure /usr/local/bin/simbox-update
 
+# wsl.conf keeps appendWindowsPath=false on purpose: the full Windows PATH lets
+# python.exe / node.exe / git.exe shadow the Linux tooling the exercises need.
+# So expose the one binary trainees are actually told to type, and nothing else.
+# `ln -s` never checks its target - /mnt/c is not mounted during the build, and
+# the link is resolved at exec time inside WSL, where automount has provided it.
+RUN ln -s /mnt/c/Windows/explorer.exe /usr/local/bin/explorer.exe
+
 # Record what this image was pinned to, so the tests and simbox-update can
 # tell whether a checkout still matches the state the videos were made against.
 RUN mkdir -p /etc/simbox \
@@ -130,6 +137,7 @@ RUN test -x /usr/local/bin/simbox-configure \
     && test -x /home/${USERNAME}/tests/run-all.sh \
     && test -f /etc/profile.d/simbox.sh \
     && test -f /etc/simbox/pinned-refs \
+    && test -L /usr/local/bin/explorer.exe \
     && bash -n /usr/local/bin/simbox-configure \
     && bash -n /usr/local/bin/simbox-update \
     && bash -n /home/${USERNAME}/tests/run-all.sh

@@ -59,6 +59,7 @@ On the Windows side the downloaded tarball is cached in
 | User | `roberto` — no password, passwordless `sudo` |
 | CLI tools | git, curl, wget, jq, xxd, zip, unzip, ripgrep, nano, less, bubblewrap, build-essential, openssh-client |
 | Runtimes | Python 3 (system), Node.js 22 |
+| Windows interop | `explorer.exe` on PATH (symlink to `/mnt/c/Windows/explorer.exe`) |
 | Agents | `claude` (Claude Code), `codex` (Codex CLI) — both routed through the gateway |
 | ML env | `~/projects/bpm-pizza-ml/.venv` with torch, torchvision, tqdm, Pillow (CPU wheels) |
 | Projects | `~/projects/bpm-pizza-ml`, `~/projects/bpm-pizza-vibecoding` |
@@ -257,6 +258,7 @@ a time.
 | `02-codex` | Codex — `/v1/responses` and the model alias |
 | `03-agents-chained` | Claude's Bash tool and agent-to-agent invocation |
 | `05-exercise-env` | PyTorch, datasets, both repos and the vibecoding skills |
+| `06-windows-interop` | `explorer.exe` on PATH, Linux tooling not shadowed by `appendWindowsPath` |
 04 is retired, not missing — audio moved server-side (#3); 05 kept its number so docs and `simbox-test 05` wouldn't churn for no gain.
 
 ```bash
@@ -311,6 +313,7 @@ wsl --unregister pizza-sim  # delete, irreversible
 | Codex: `Model metadata not found` | no metadata for gateway aliases | expected and harmless |
 | Codex refuses to run outside a repo | it requires a git repository | `cd` into one, or pass `--skip-git-repo-check` |
 | `.env` seems missing | it lives in `~/.env`, not `~/projects` | `cat ~/.env` |
+| `explorer.exe: No such file or directory` | `/mnt/c` not mounted | check `[automount]` in `/etc/wsl.conf` |
 | 404 on the GHCR package page | org policy forbids public packages | import the released rootfs instead, see above |
 
 ---
