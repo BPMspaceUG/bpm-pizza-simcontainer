@@ -16,6 +16,7 @@ ARG NODE_MAJOR=22
 # release is cut - that is a deliberate decision, never a side effect.
 ARG ML_REF=v1.0.1
 ARG VIBE_REF=v1.0.0
+ARG PII_REF=v1.0.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -112,7 +113,7 @@ RUN chmod 0644 /etc/profile.d/simbox.sh \
 # Record what this image was pinned to, so the tests and simbox-update can
 # tell whether a checkout still matches the state the videos were made against.
 RUN mkdir -p /etc/simbox \
-    && printf 'bpm-pizza-ml=%s\nbpm-pizza-vibecoding=%s\n' "${ML_REF}" "${VIBE_REF}" \
+    && printf 'bpm-pizza-ml=%s\nbpm-pizza-vibecoding=%s\nbpm-pizza-pII=%s\n' "${ML_REF}" "${VIBE_REF}" "${PII_REF}" \
        > /etc/simbox/pinned-refs \
     && chmod 0644 /etc/simbox/pinned-refs
 
@@ -149,7 +150,9 @@ RUN mkdir -p projects .codex .claude \
     && git clone --depth 1 --branch "${ML_REF}" \
          https://github.com/BPMspaceUG/bpm-pizza-ml.git         projects/bpm-pizza-ml \
     && git clone --depth 1 --branch "${VIBE_REF}" \
-         https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git projects/bpm-pizza-vibecoding
+         https://github.com/BPMspaceUG/bpm-pizza-vibecoding.git projects/bpm-pizza-vibecoding \
+    && git clone --depth 1 --branch "${PII_REF}" \
+         https://github.com/BPMspaceUG/bpm-pizza-pII.git       projects/bpm-pizza-pII
 
 # Verify both checkouts landed AND really sit on the requested tag.
 #
@@ -158,10 +161,12 @@ RUN mkdir -p projects .codex .claude \
 # must break the build here rather than surface mid-exercise (#5).
 RUN test -d projects/bpm-pizza-ml/.git \
     && test -d projects/bpm-pizza-vibecoding/.git \
+    && test -d projects/bpm-pizza-pII/.git \
     && test -f projects/bpm-pizza-ml/check_environment.py \
     && [ -n "$(ls -1 projects/bpm-pizza-vibecoding/.claude/skills/*/SKILL.md 2>/dev/null)" ] \
     && [ "$(git -C projects/bpm-pizza-ml describe --tags --exact-match 2>/dev/null)" = "${ML_REF}" ] \
-    && [ "$(git -C projects/bpm-pizza-vibecoding describe --tags --exact-match 2>/dev/null)" = "${VIBE_REF}" ]
+    && [ "$(git -C projects/bpm-pizza-vibecoding describe --tags --exact-match 2>/dev/null)" = "${VIBE_REF}" ] \
+    && [ "$(git -C projects/bpm-pizza-pII describe --tags --exact-match 2>/dev/null)" = "${PII_REF}" ]
 
 # Only the chmod may fail harmlessly - a repo without .sh files is fine.
 RUN chmod +x projects/bpm-pizza-ml/*.sh 2>/dev/null || true
