@@ -13,10 +13,12 @@ TEST_NAME="07-env-count"
 header "check_env() entry counting"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+UPDATE_SH="/usr/local/bin/simbox-update"
+[ -f "$UPDATE_SH" ] || UPDATE_SH="$REPO/update.sh"
 step() { :; }                          # stub: check_env()'s only external call
-eval "$(sed -n '/^check_env() {/,/^}/p' "$REPO/update.sh")"
+eval "$(sed -n '/^check_env() {/,/^}/p' "$UPDATE_SH")"
 type check_env >/dev/null 2>&1 || fail "extraction failed" \
-    "check_env() no longer matches the sed pattern - has update.sh's shape changed?"
+    "check_env() not found in $UPDATE_SH - has its shape changed, or is neither location present?"
 
 SCRATCH_HOME="$(mktemp -d)"
 export HOME="$SCRATCH_HOME"
