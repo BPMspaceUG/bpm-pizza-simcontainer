@@ -97,7 +97,17 @@ do_env() {
 check_env() {
     step "0. environment file"
     local n
-    n=$(grep -c '=' "$HOME/.env" 2>/dev/null || echo 0)
+    n=$(
+        [ -r "$HOME/.env" ] || { echo 0; exit; }
+        # shellcheck disable=SC1091
+        . "$HOME/.env" 2>/dev/null
+        count=0
+        while IFS= read -r key; do
+            [ -n "${!key:-}" ] && count=$((count + 1))
+        done < <(grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$HOME/.env" 2>/dev/null \
+                  | sed -E 's/^[[:space:]]*//; s/=$//')
+        echo "$count"
+    )
     printf '  %s entries in ~/.env\n' "$n"
     if [ -r "$STATE_FILE" ]; then
         printf '  source: %s\n' "$(head -n1 "$STATE_FILE")"
