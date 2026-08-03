@@ -170,7 +170,9 @@ RUN chmod +x projects/bpm-pizza-ml/*.sh 2>/dev/null || true
 # Exercise environment: PyTorch venv inside bpm-pizza-ml
 #
 # The exercises expect exactly this:
-#     cd bpm-pizza-ml && source .venv/bin/activate && python3 check_environment.py
+#     cd bpm-pizza-ml && python3 check_environment.py
+# (no `source .venv/bin/activate` needed - the login shell's profile.d puts
+# the venv's bin/ on PATH already)
 #
 # CPU-only wheels on purpose - the CUDA build is several GB and useless on
 # a training laptop.

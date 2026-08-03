@@ -41,5 +41,9 @@ export ANTHROPIC_SMALL_FAST_MODEL="${CLAUDE_MODEL:-openrouter/moonshotai/kimi-k2
 # The provider block lives in ~/.codex/config.toml and reads LITELLM_PIZZA_KEY,
 # which the block above already exported from ~/.env.
 
+_venv="$HOME/projects/bpm-pizza-ml/.venv"
+[ -x "$_venv/bin/python3" ] && export PATH="$_venv/bin:$PATH"
+unset _venv
+
 # Start in the project directory - this is what the exercise videos show.
 cd "$HOME/projects" 2>/dev/null || true

@@ -56,6 +56,22 @@ printf '%s\n' "$out" | sed 's/^/  /'
 printf '%s' "$out" | grep -qi 'ready to start\|all dependencies' \
     || fail "check_environment.py did not report a complete environment"
 
+# --- a trainee's actual login shell must have the venv on PATH already ------
+# (no `source .venv/bin/activate` - profile.d/simbox.sh puts it there, #10)
+grep -q './.venv/bin/python check_environment.py' "$0" \
+    || fail "the explicit venv-interpreter check above was rewritten"
+
+login_python=$(bash -lc 'command -v python3')
+[ "$login_python" = "$REPO/.venv/bin/python3" ] \
+    || fail "login shell resolves python3 to $login_python, not the venv" \
+           "profile.d/simbox.sh should have put $REPO/.venv/bin on PATH"
+
+login_out=$(bash -lc 'cd "$HOME/projects/bpm-pizza-ml" && python3 check_environment.py' 2>&1)
+login_rc=$?
+[ $login_rc -eq 0 ] || fail "check_environment.py exited with $login_rc in a login shell"
+printf '%s' "$login_out" | grep -qi 'ready to start\|all dependencies' \
+    || fail "check_environment.py did not report a complete environment in a login shell"
+
 # --- still on the pinned release? -------------------------------------------
 # Not fatal: a trainer may have moved a repo on purpose with
 # `simbox-update --repos-latest`. But it must be visible, because the
