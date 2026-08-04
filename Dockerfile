@@ -16,7 +16,7 @@ ARG NODE_MAJOR=22
 # release is cut - that is a deliberate decision, never a side effect.
 ARG ML_REF=v1.0.1
 ARG VIBE_REF=v1.0.0
-ARG PII_REF=v1.0.0
+ARG PII_REF=v1.0.1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
